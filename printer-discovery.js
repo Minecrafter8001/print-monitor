@@ -18,9 +18,13 @@ class PrinterDiscovery {
     return new Promise((resolve, reject) => {
       const printers = [];
       const socket = dgram.createSocket('udp4');
+      let closed = false;
 
       socket.on('error', (err) => {
-        socket.close();
+        if (!closed) {
+          closed = true;
+          socket.close();
+        }
         reject(err);
       });
 
@@ -45,7 +49,10 @@ class PrinterDiscovery {
         const message = Buffer.from(this.discoveryMessage);
         socket.send(message, 0, message.length, this.discoveryPort, '255.255.255.255', (err) => {
           if (err) {
-            socket.close();
+            if (!closed) {
+              closed = true;
+              socket.close();
+            }
             reject(err);
             return;
           }
@@ -54,7 +61,10 @@ class PrinterDiscovery {
 
         // Wait for responses
         setTimeout(() => {
-          socket.close();
+          if (!closed) {
+            closed = true;
+            socket.close();
+          }
           resolve(printers);
         }, timeout);
       });

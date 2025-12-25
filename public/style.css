@@ -6,10 +6,10 @@
 
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: #1a1a2e;
     min-height: 100vh;
     padding: 20px;
-    color: #333;
+    color: #e0e0e0;
 }
 
 .container {
@@ -18,19 +18,20 @@ body {
 }
 
 header {
-    background: white;
+    background: #16213e;
     padding: 20px 30px;
     border-radius: 10px;
     margin-bottom: 20px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
     display: flex;
     justify-content: space-between;
     align-items: center;
     flex-wrap: wrap;
+    border: 1px solid #0f3460;
 }
 
 header h1 {
-    color: #667eea;
+    color: #00d4ff;
     font-size: 2em;
     margin: 0;
 }
@@ -71,17 +72,18 @@ header h1 {
 }
 
 .card {
-    background: white;
+    background: #16213e;
     padding: 25px;
     border-radius: 10px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    border: 1px solid #0f3460;
 }
 
 .card h2 {
-    color: #667eea;
+    color: #00d4ff;
     margin-bottom: 20px;
     font-size: 1.5em;
-    border-bottom: 2px solid #667eea;
+    border-bottom: 2px solid #0f3460;
     padding-bottom: 10px;
 }
 
@@ -95,17 +97,17 @@ header h1 {
     display: flex;
     justify-content: space-between;
     padding: 10px;
-    background: #f8f9fa;
+    background: #0f3460;
     border-radius: 5px;
 }
 
 .label {
     font-weight: 600;
-    color: #555;
+    color: #a0a0a0;
 }
 
 .value {
-    color: #333;
+    color: #e0e0e0;
     font-weight: 500;
 }
 
@@ -144,14 +146,15 @@ header h1 {
 .progress-bar {
     position: relative;
     height: 40px;
-    background: #ecf0f1;
+    background: #0f3460;
     border-radius: 20px;
     overflow: hidden;
+    border: 1px solid #1a4d7a;
 }
 
 .progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(90deg, #00d4ff 0%, #0080ff 100%);
     width: 0%;
     transition: width 0.5s ease;
     border-radius: 20px;
@@ -163,8 +166,9 @@ header h1 {
     left: 50%;
     transform: translate(-50%, -50%);
     font-weight: bold;
-    color: #333;
+    color: #ffffff;
     font-size: 1.1em;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
 .time-info {
@@ -178,7 +182,7 @@ header h1 {
     flex-direction: column;
     gap: 5px;
     padding: 10px;
-    background: #f8f9fa;
+    background: #0f3460;
     border-radius: 5px;
 }
 
@@ -193,12 +197,21 @@ header h1 {
     align-items: center;
     gap: 20px;
     padding: 15px;
-    background: #f8f9fa;
+    background: #0f3460;
     border-radius: 10px;
 }
 
 .temp-icon {
     font-size: 2.5em;
+    width: 60px;
+    height: 60px;
+    background: #1a4d7a;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #00d4ff;
+    font-weight: bold;
 }
 
 .temp-info {
@@ -207,7 +220,7 @@ header h1 {
 
 .temp-label {
     font-weight: 600;
-    color: #555;
+    color: #a0a0a0;
     margin-bottom: 5px;
     font-size: 1.1em;
 }
@@ -215,7 +228,7 @@ header h1 {
 .temp-value {
     font-size: 1.3em;
     font-weight: bold;
-    color: #667eea;
+    color: #00d4ff;
 }
 
 .camera-card {
@@ -232,10 +245,11 @@ header h1 {
     display: flex;
     align-items: center;
     justify-content: center;
+    border: 1px solid #0f3460;
 }
 
 .camera-placeholder {
-    color: #95a5a6;
+    color: #606060;
     font-size: 1.2em;
     text-align: center;
 }
@@ -247,12 +261,13 @@ header h1 {
 }
 
 footer {
-    background: white;
+    background: #16213e;
     padding: 15px;
     border-radius: 10px;
     text-align: center;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    color: #777;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    color: #808080;
+    border: 1px solid #0f3460;
 }
 
 /* Responsive design */

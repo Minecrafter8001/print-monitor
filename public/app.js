@@ -17,8 +17,14 @@ function connectWebSocket() {
     ws.onmessage = (event) => {
         try {
             const message = JSON.parse(event.data);
-            if (message.type === 'status') {
-                updateUI(message.data);
+            
+            // Handle different message types
+            switch (message.type) {
+                case 'status':
+                    updateUI(message.data);
+                    break;
+                default:
+                    console.log('Unknown message type:', message.type);
             }
         } catch (err) {
             console.error('Failed to parse message:', err);

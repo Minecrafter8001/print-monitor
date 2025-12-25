@@ -99,14 +99,15 @@ wss.on('connection', (ws) => {
   // Send current status
   ws.send(JSON.stringify({ type: 'status', data: printerStatus }));
 
-  ws.on('close', () => {
+  const cleanup = () => {
     console.log('Web client disconnected');
     webClients.delete(ws);
-  });
+  };
 
+  ws.on('close', cleanup);
   ws.on('error', (err) => {
     console.error('WebSocket error:', err);
-    webClients.delete(ws);
+    cleanup();
   });
 });
 
