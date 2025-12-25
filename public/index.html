@@ -10,10 +10,12 @@
 <body>
     <div class="container">
         <header>
-            <h1>Print Monitor</h1>
+            <h1>Elegoo Print Monitor</h1>
             <div class="connection-status">
                 <span class="status-indicator" id="connectionStatus"></span>
                 <span id="connectionText">Disconnected</span>
+                <span class="status-separator">|</span>
+                <span class="user-count" id="userCount">0 users online</span>
             </div>
         </header>
 
@@ -121,6 +123,11 @@
                     <img id="cameraFeed" class="camera-feed" style="display: none;" alt="Printer camera feed">
                 </div>
             </div>
+        </div>
+
+        <footer>
+            <p>Elegoo Centauri Carbon Print Monitor | Real-time monitoring via SDCP protocol</p>
+        </footer>
     </div>
 
     <script src="app.js"></script>

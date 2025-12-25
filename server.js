@@ -47,12 +47,91 @@ let cameraStreamURL = null;
 let printerStream = null;
 const cameraSubscribers = new Set(); // Clients subscribed to camera stream
 
+// User counters and tracking
+const userStats = {
+  webClients: 0,
+  cameraClients: 0,
+  totalWebConnections: 0,
+  totalCameraConnections: 0
+};
+const webClientIPs = new Set();
+const cameraClientIPs = new Set();
+
+function normalizeIP(ip) {
+  if (!ip) return 'unknown';
+  // Remove IPv6 prefix for IPv4-mapped addresses
+  if (ip.startsWith('::ffff:')) {
+    ip = ip.substring(7);
+  }
+  return ip;
+}
+
+function isLocal192(ip) {
+  return /^192\.168\./.test(ip);
+}
+
+function pickForwardedIP(headerValue) {
+  if (!headerValue) return null;
+  const parts = headerValue.split(',').map(p => normalizeIP(p.trim())).filter(Boolean);
+  for (const ip of parts) {
+    if (!isLocal192(ip)) return ip;
+  }
+  return parts[0] || null;
+}
+
+function getClientIP(req, socket) {
+  // Prefer x-forwarded-for chain
+  const xfwd = pickForwardedIP(req?.headers?.['x-forwarded-for']);
+  if (xfwd && !isLocal192(xfwd)) return xfwd;
+
+  // Cloudflare headers
+  const cfip = normalizeIP(req?.headers?.['cf-connecting-ip']);
+  if (cfip && cfip !== 'unknown' && !isLocal192(cfip)) return cfip;
+
+  const cfipv6 = normalizeIP(req?.headers?.['cf-connecting-ipv6']);
+  if (cfipv6 && cfipv6 !== 'unknown' && !isLocal192(cfipv6)) return cfipv6;
+
+  // Fallback to remote address if not local 192.168.x.x
+  const remote = normalizeIP(socket?.remoteAddress || req?.socket?.remoteAddress);
+  if (remote && remote !== 'unknown' && !isLocal192(remote)) return remote;
+
+  return 'unknown';
+}
+
+function updateUserStatsAndBroadcast() {
+  printerStatus.users = getUserStats();
+  // Notify connected web clients of updated stats
+  broadcastToClients({ type: 'status', data: buildStatusPayload() });
+}
+
+function getUserStats() {
+  return {
+    webClients: userStats.webClients,
+    cameraClients: userStats.cameraClients,
+    totalWebConnections: userStats.totalWebConnections,
+    totalCameraConnections: userStats.totalCameraConnections,
+    uniqueWebIPs: webClientIPs.size,
+    uniqueCameraIPs: cameraClientIPs.size
+  };
+}
+
+function buildStatusPayload() {
+  // Keep printerStatus.users for backward compatibility
+  printerStatus.users = printerStatus.users || getUserStats();
+  return {
+    printer: printerStatus,
+    users: getUserStats()
+  };
+}
+
 // Serve static files
 app.use(express.static('public'));
 
 // API endpoint to get current printer status
 app.get('/api/status', (req, res) => {
-  res.json(printerStatus);
+  // Ensure latest user stats are present
+  printerStatus.users = getUserStats();
+  res.json(buildStatusPayload());
 });
 
 // API endpoint to discover printers
@@ -80,10 +159,22 @@ app.get('/api/camera', async (req, res) => {
   };
 
   cameraSubscribers.add(subscriber);
+  // Track IP and counters
+  try {
+    const ip = getClientIP(req, req.socket);
+    if (ip !== 'unknown') {
+      cameraClientIPs.add(ip);
+    }
+  } catch (_) {}
+  userStats.cameraClients += 1;
+  userStats.totalCameraConnections += 1;
+  updateUserStatsAndBroadcast();
 
   // Handle client disconnect
   req.on('close', () => {
     cameraSubscribers.delete(subscriber);
+    userStats.cameraClients = Math.max(0, userStats.cameraClients - 1);
+    updateUserStatsAndBroadcast();
   });
 });
 
@@ -99,16 +190,28 @@ app.post('/api/connect/:ip', express.json(), async (req, res) => {
 });
 
 // WebSocket connection handler for web clients
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
   console.log('Web client connected');
   webClients.add(ws);
+  // Track IP and counters
+  try {
+    const ip = getClientIP(req, ws._socket);
+    if (ip !== 'unknown') {
+      webClientIPs.add(ip);
+    }
+  } catch (_) {}
+  userStats.webClients += 1;
+  userStats.totalWebConnections += 1;
+  updateUserStatsAndBroadcast();
 
   // Send current status
-  ws.send(JSON.stringify({ type: 'status', data: printerStatus }));
+  ws.send(JSON.stringify({ type: 'status', data: buildStatusPayload() }));
 
   const cleanup = () => {
     console.log('Web client disconnected');
     webClients.delete(ws);
+    userStats.webClients = Math.max(0, userStats.webClients - 1);
+    updateUserStatsAndBroadcast();
   };
 
   ws.on('close', cleanup);
@@ -207,7 +310,7 @@ function updatePrinterStatus(data) {
   }
 
   // Broadcast update to all web clients
-  broadcastToClients({ type: 'status', data: printerStatus });
+  broadcastToClients({ type: 'status', data: buildStatusPayload() });
 }
 
 /**
@@ -276,7 +379,7 @@ async function connectToPrinter(printerIP, printerName = null) {
   if (printerName) {
     printerStatus.printerName = printerName;
   }
-  broadcastToClients({ type: 'status', data: printerStatus });
+  broadcastToClients({ type: 'status', data: buildStatusPayload() });
 }
 
 /**

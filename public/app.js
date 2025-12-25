@@ -60,61 +60,68 @@ function clearReconnectInterval() {
     }
 }
 
-// Update UI with printer status
-function updateUI(status) {
+// Update UI with combined payload { printer, users }
+function updateUI(payload) {
+    const printer = payload?.printer || {};
+    const users = payload?.users || {};
+
     // Connection status
     const statusIndicator = document.getElementById('connectionStatus');
     const connectionText = document.getElementById('connectionText');
-    
-    if (status.connected) {
+    const userCountText = document.getElementById('userCount');
+
+    if (printer.connected) {
         statusIndicator.classList.add('connected');
         connectionText.textContent = 'Connected';
     } else {
         statusIndicator.classList.remove('connected');
         connectionText.textContent = 'Disconnected';
     }
+
+    const uniqueUsers = users.uniqueWebIPs || 0;
+    userCountText.textContent = `${uniqueUsers} user${uniqueUsers === 1 ? '' : 's'} online`;
     
     // Printer info
-    document.getElementById('printerName').textContent = status.printerName || '-';
+    document.getElementById('printerName').textContent = printer.printerName || '-';
     
     // Printer state
     const stateElement = document.getElementById('printerState');
-    stateElement.textContent = status.state || '-';
+    stateElement.textContent = printer.state || '-';
     stateElement.className = 'value state';
-    if (status.state) {
-        stateElement.classList.add(status.state.toLowerCase());
+    if (printer.state) {
+        stateElement.classList.add(printer.state.toLowerCase());
     }
     
     // Current file
-    document.getElementById('currentFile').textContent = status.currentFile || '-';
+    document.getElementById('currentFile').textContent = printer.currentFile || '-';
     
     // Last update
-    if (status.lastUpdate) {
-        const updateTime = new Date(status.lastUpdate);
+    if (printer.lastUpdate) {
+        const updateTime = new Date(printer.lastUpdate);
         document.getElementById('lastUpdate').textContent = updateTime.toLocaleTimeString();
     } else {
         document.getElementById('lastUpdate').textContent = '-';
     }
     
     // Progress (6 decimal precision for calculations, 2 for display)
-    const progress = Number((status.layerProgress || 0).toFixed(6));
+    const progress = Number((printer.layerProgress || 0).toFixed(6));
     document.getElementById('progressFill').style.width = `${progress}%`;
     document.getElementById('progressText').textContent = `${progress.toFixed(2)}%`;
     
     // Print time
-    document.getElementById('printTime').textContent = formatTime(status.printTime || 0);
-    document.getElementById('remainingTime').textContent = formatTime(status.remainingTime || 0);
-    document.getElementById('calculatedTime').textContent = formatTime(status.calculatedTime || 0);
+    document.getElementById('printTime').textContent = formatTime(printer.printTime || 0);
+    document.getElementById('remainingTime').textContent = formatTime(printer.remainingTime || 0);
+    document.getElementById('calculatedTime').textContent = formatTime(printer.calculatedTime || 0);
     
     // Calculate and display ETAs
     const currentTime = Date.now();
-    const reportedETA = new Date(currentTime + (status.remainingTime || 0) * 1000);
+    const reportedETA = new Date(currentTime + (printer.remainingTime || 0) * 1000);
     document.getElementById('ReportedETA').textContent = reportedETA.toLocaleTimeString();
     
-    const calculatedETA = new Date(currentTime + (status.calculatedTime || 0) * 1000);
+    const calculatedETA = new Date(currentTime + (printer.calculatedTime || 0) * 1000);
     document.getElementById('CalculatedETA').textContent = calculatedETA.toLocaleTimeString();
     
-    if (progress >= 100 || status.state === 'idle') {
+    if (progress >= 100 || printer.state === 'idle') {
         document.getElementById('ReportedETA').textContent = '-';
         document.getElementById('CalculatedETA').textContent = '-';
         document.getElementById('remainingTime').textContent = '-';
@@ -123,7 +130,7 @@ function updateUI(status) {
 
     
     // Temperatures
-    const temps = status.temperatures || { bed: { current: 0, target: 0 }, nozzle: { current: 0, target: 0 } };
+    const temps = printer.temperatures || { bed: { current: 0, target: 0 }, nozzle: { current: 0, target: 0 }, enclosure: { current: 0, target: 0 } };
     document.getElementById('nozzleTemp').textContent = Math.round(temps.nozzle.current || 0);
     document.getElementById('nozzleTarget').textContent = Math.round(temps.nozzle.target || 0);
     document.getElementById('bedTemp').textContent = Math.round(temps.bed.current || 0);
@@ -135,7 +142,7 @@ function updateUI(status) {
     const cameraFeed = document.getElementById('cameraFeed');
     const cameraPlaceholder = document.getElementById('cameraPlaceholder');
     
-    if (status.cameraAvailable) {
+    if (printer.cameraAvailable) {
         // Fetch camera from server endpoint
         cameraFeed.src = '/api/camera';
         cameraFeed.style.display = 'block';
