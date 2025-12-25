@@ -1,0 +1,23 @@
+{
+  "name": "elegoo-print-monitor",
+  "version": "1.0.0",
+  "description": "Node.js web server for monitoring Elegoo 3D printers with real-time status and camera feed",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "elegoo",
+    "3d-printer",
+    "monitoring",
+    "centauri-carbon"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "ws": "^8.14.2",
+    "uuid": "^9.0.1"
+  }
+}

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elegoo Print Monitor</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🖨️ Elegoo Print Monitor</h1>
+            <div class="connection-status">
+                <span class="status-indicator" id="connectionStatus"></span>
+                <span id="connectionText">Disconnected</span>
+            </div>
+        </header>
+
+        <div class="main-grid">
+            <!-- Printer Status Card -->
+            <div class="card">
+                <h2>Printer Status</h2>
+                <div class="status-grid">
+                    <div class="status-item">
+                        <span class="label">Printer Name:</span>
+                        <span class="value" id="printerName">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="label">State:</span>
+                        <span class="value state" id="printerState">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="label">Current File:</span>
+                        <span class="value" id="currentFile">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="label">Last Update:</span>
+                        <span class="value" id="lastUpdate">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Print Progress Card -->
+            <div class="card">
+                <h2>Print Progress</h2>
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                        <span class="progress-text" id="progressText">0%</span>
+                    </div>
+                </div>
+                <div class="time-info">
+                    <div class="time-item">
+                        <span class="label">Print Time:</span>
+                        <span class="value" id="printTime">-</span>
+                    </div>
+                    <div class="time-item">
+                        <span class="label">Remaining:</span>
+                        <span class="value" id="remainingTime">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Temperature Card -->
+            <div class="card">
+                <h2>Temperatures</h2>
+                <div class="temp-grid">
+                    <div class="temp-item">
+                        <div class="temp-icon">🔥</div>
+                        <div class="temp-info">
+                            <div class="temp-label">Nozzle</div>
+                            <div class="temp-value">
+                                <span id="nozzleTemp">0</span>°C / 
+                                <span id="nozzleTarget">0</span>°C
+                            </div>
+                        </div>
+                    </div>
+                    <div class="temp-item">
+                        <div class="temp-icon">🛏️</div>
+                        <div class="temp-info">
+                            <div class="temp-label">Bed</div>
+                            <div class="temp-value">
+                                <span id="bedTemp">0</span>°C / 
+                                <span id="bedTarget">0</span>°C
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Camera Feed Card -->
+            <div class="card camera-card">
+                <h2>Camera Feed</h2>
+                <div class="camera-container" id="cameraContainer">
+                    <div class="camera-placeholder" id="cameraPlaceholder">
+                        <span>📷 No camera feed available</span>
+                    </div>
+                    <img id="cameraFeed" class="camera-feed" style="display: none;" alt="Printer camera feed">
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>Elegoo Centauri Carbon Print Monitor | Real-time monitoring via SDCP protocol</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
