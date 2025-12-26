@@ -28,6 +28,18 @@ header {
     align-items: center;
     flex-wrap: wrap;
     border: 1px solid #0f3460;
+    position: relative;
+}
+/* Time positioning in header (flex, no overlap) */
+.current-time {
+    font-size: 1.1em;
+    letter-spacing: 0.5px;
+    border-radius: 6px;
+    margin-right: 0;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    height: 100%;
 }
 
 header h1 {
@@ -35,6 +47,25 @@ header h1 {
     font-size: 2em;
     margin: 0;
 }
+
+/* Header info container for status, user count, and time */
+.header-info-container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex: 1 1 auto;
+    min-width: 0;
+    gap: 24px;
+}
+
+.header-info-left {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    flex-shrink: 1;
+    min-width: 0;
+}
+
 
 .connection-status {
     display: flex;
@@ -47,6 +78,7 @@ header h1 {
     width: 15px;
     height: 15px;
     border-radius: 50%;
+    margin-left: auto;
     background: #e74c3c;
     animation: pulse 2s infinite;
 }
@@ -390,4 +422,12 @@ footer {
     .time-info {
         grid-template-columns: 1fr;
     }
+
+    .current-time {
+        margin: 10px auto 0 auto;
+        display: inline-block;
+        width: auto;
+        height: auto;
+    }
 }
+

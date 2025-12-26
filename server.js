@@ -390,15 +390,39 @@ function updatePrinterStatus(data) {
 }
 
 /**
- * Broadcast message to all connected web clients
+ * Broadcast message to all connected web clients, throttled to once per second
  */
+let lastBroadcastTime = 0;
+let pendingBroadcast = null;
 function broadcastToClients(message) {
+  const now = Date.now();
   const data = JSON.stringify(message);
-  webClients.forEach((client) => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(data);
+  const minInterval = 1000; // 1 second
+
+  if (now - lastBroadcastTime >= minInterval) {
+    // Send immediately
+    webClients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(data);
+      }
+    });
+    lastBroadcastTime = now;
+    pendingBroadcast = null;
+  } else {
+    // Schedule a broadcast if not already scheduled
+    if (!pendingBroadcast) {
+      const delay = minInterval - (now - lastBroadcastTime);
+      pendingBroadcast = setTimeout(() => {
+        webClients.forEach((client) => {
+          if (client.readyState === WebSocket.OPEN) {
+            client.send(data);
+          }
+        });
+        lastBroadcastTime = Date.now();
+        pendingBroadcast = null;
+      }, delay);
     }
-  });
+  }
 }
 
 /**
