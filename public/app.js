@@ -3,6 +3,36 @@ let ws = null;
 let reconnectInterval = null;
 let cameraInitialized = false;
 let snapshotTaken = false;
+let lastPrinterState = null; // Track last known printer state
+
+// Settings object
+const defaultSettings = {
+    pauseOnIdle: true
+};
+
+let settings = loadSettings();
+
+// Load settings from localStorage
+function loadSettings() {
+    try {
+        const stored = localStorage.getItem('Settings');
+        if (stored) {
+            return { ...defaultSettings, ...JSON.parse(stored) };
+        }
+    } catch (err) {
+        console.error('Failed to load settings:', err);
+    }
+    return { ...defaultSettings };
+}
+
+// Save settings to localStorage
+function saveSettings() {
+    try {
+        localStorage.setItem('Settings', JSON.stringify(settings));
+    } catch (err) {
+        console.error('Failed to save settings:', err);
+    }
+}
 
 // Connect to WebSocket server
 function connectWebSocket() {
@@ -145,32 +175,47 @@ function updateUI(payload) {
     const cameraPlaceholder = document.getElementById('cameraPlaceholder');
     const cameraOverlay = document.getElementById('cameraOverlay');
     
+    // Store printer state for button handler
+    lastPrinterState = printer.state?.toLowerCase();
+    
     if (printer.cameraAvailable) {
         if (printer.state.toLowerCase() === "idle")   {
-            // On first load when idle, request a single frame then convert to static image
-            if (!cameraInitialized) {
-                cameraFeed.src = '/api/camera';
+            // Check if pause on idle is enabled
+            if (settings.pauseOnIdle) {
+                // On first load when idle, request a single frame then convert to static image
+                if (!cameraInitialized) {
+                    cameraFeed.src = '/api/camera';
+                    cameraInitialized = true;
+                    
+                    // Capture frame to canvas after loading, then replace with static data URL
+                    cameraFeed.onload = function captureFrame() {
+                        if (!snapshotTaken && printer.state?.toLowerCase() === "idle") {
+                            const canvas = document.createElement('canvas');
+                            canvas.width = cameraFeed.naturalWidth;
+                            canvas.height = cameraFeed.naturalHeight;
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(cameraFeed, 0, 0);
+                            cameraFeed.src = canvas.toDataURL('image/jpeg');
+                            snapshotTaken = true;
+                            cameraFeed.onload = null; // Remove this handler
+                        }
+                    };
+                }
+                // Keep last frame visible but show idle overlay
+                cameraFeed.style.display = 'block';
+                cameraPlaceholder.style.display = 'none';
+                cameraOverlay.style.display = 'flex';
+                return;
+            } else {
+                // Pause on idle is disabled, continue streaming
                 cameraInitialized = true;
-                
-                // Capture frame to canvas after loading, then replace with static data URL
-                cameraFeed.onload = function captureFrame() {
-                    if (!snapshotTaken && printer.state?.toLowerCase() === "idle") {
-                        const canvas = document.createElement('canvas');
-                        canvas.width = cameraFeed.naturalWidth;
-                        canvas.height = cameraFeed.naturalHeight;
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(cameraFeed, 0, 0);
-                        cameraFeed.src = canvas.toDataURL('image/jpeg');
-                        snapshotTaken = true;
-                        cameraFeed.onload = null; // Remove this handler
-                    }
-                };
+                snapshotTaken = false;
+                cameraFeed.src = '/api/camera';
+                cameraFeed.style.display = 'block';
+                cameraPlaceholder.style.display = 'none';
+                cameraOverlay.style.display = 'none';
+                return;
             }
-            // Keep last frame visible but show idle overlay
-            cameraFeed.style.display = 'block';
-            cameraPlaceholder.style.display = 'none';
-            cameraOverlay.style.display = 'flex';
-            return;
         }
         // Fetch camera from server endpoint
         cameraFeed.src = '/api/camera';
@@ -196,8 +241,62 @@ function formatTime(seconds) {
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
+// Toggle camera pause immediately
+function toggleCameraStream() {
+    const cameraFeed = document.getElementById('cameraFeed');
+    const cameraOverlay = document.getElementById('cameraOverlay');
+    
+    // Only act if printer is idle and camera is available
+    if (lastPrinterState === 'idle' && cameraFeed.style.display === 'block') {
+        if (settings.pauseOnIdle) {
+            // Pause: Take snapshot and show overlay
+            if (!snapshotTaken) {
+                const canvas = document.createElement('canvas');
+                canvas.width = cameraFeed.naturalWidth;
+                canvas.height = cameraFeed.naturalHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(cameraFeed, 0, 0);
+                cameraFeed.src = canvas.toDataURL('image/jpeg');
+                snapshotTaken = true;
+            }
+            cameraOverlay.style.display = 'flex';
+        } else {
+            // Resume: Restart stream and hide overlay
+            snapshotTaken = false;
+            cameraFeed.src = '/api/camera';
+            cameraOverlay.style.display = 'none';
+        }
+    }
+}
+
+// Initialize pause on idle button
+function initPauseOnIdleButton() {
+    const btn = document.getElementById('pauseOnIdleBtn');
+    
+    // Set initial state
+    if (settings.pauseOnIdle) {
+        btn.classList.add('active');
+    }
+    
+    // Add click handler
+    btn.addEventListener('click', () => {
+        settings.pauseOnIdle = !settings.pauseOnIdle;
+        saveSettings();
+        
+        if (settings.pauseOnIdle) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+        
+        // Immediately apply the change
+        toggleCameraStream();
+    });
+}
+
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Elegoo Print Monitor starting...');
+    initPauseOnIdleButton();
     connectWebSocket();
 });
