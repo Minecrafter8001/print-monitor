@@ -415,7 +415,7 @@ function updatePrinterStatus(data) {
 
   // Broadcast update to all web clients
   broadcastToClients({ type: 'status', data: buildStatusPayload() });
-}
+
 
 /**
  * Broadcast message to all connected web clients, throttled to once per second
