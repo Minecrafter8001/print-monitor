@@ -13,8 +13,8 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
+const MAX_FPS = 15;
 const PORT = process.env.PORT || 3000;
-var CAMERA_CACHE_MS = 1000; // Poll camera every 1 second
 const STATUS_POLL_INTERVAL = 2000;
 const CAMERA_ACK_ERRORS = {
   1: 'Exceeded maximum simultaneous streaming limit',
@@ -526,6 +526,10 @@ async function startCameraStreaming() {
     const reader = response.body.getReader();
     let buffer = Buffer.alloc(0);
 
+    // Throttle frame delivery to respect MAX_FPS
+    let lastFrameTime = 0;
+    const minFrameInterval = 1000 / MAX_FPS;
+
     const processStream = async () => {
       try {
         while (true) {
@@ -559,15 +563,19 @@ async function startCameraStreaming() {
             const frameBuffer = buffer.subarray(frameDataStart, frameEnd);
 
             if (frameBuffer.length > 0) {
-              latestFrame = Buffer.from(frameBuffer);
-              // Broadcast frame to all subscribers
-              cameraSubscribers.forEach(subscriber => {
-                try {
-                  subscriber(latestFrame);
-                } catch (err) {
-                  // Subscriber cleanup handled in endpoint
-                }
-              });
+              const now = Date.now();
+              if (now - lastFrameTime >= minFrameInterval) {
+                latestFrame = Buffer.from(frameBuffer);
+                // Broadcast frame to all subscribers
+                cameraSubscribers.forEach(subscriber => {
+                  try {
+                    subscriber(latestFrame);
+                  } catch (err) {
+                    // Subscriber cleanup handled in endpoint
+                  }
+                });
+                lastFrameTime = now;
+              }
             }
 
             // Remove processed part
