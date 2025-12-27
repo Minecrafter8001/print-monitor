@@ -324,7 +324,15 @@ wss.on('connection', (ws, req) => {
  */
 let isFirstUpdate = true;
 function updatePrinterStatus(data) {
-  if (!data) return;
+  if (!data) {
+    // Printer is unreachable or offline
+    printerStatus.connected = false;
+    printerStatus.state = 'Disconnected';
+    printerStatus.cameraAvailable = false;
+    printerStatus.lastUpdate = new Date().toISOString();
+    broadcastToClients({ type: 'status', data: buildStatusPayload() });
+    return;
+  }
 
   // Log first status update for debugging
   if (isFirstUpdate) {
@@ -489,26 +497,38 @@ async function connectToPrinter(printerIP, printerName = null) {
   printerClient = new SDCPClient(printerIP);
   printerClient.onStatus(updatePrinterStatus);
 
-  // Connect and start polling
-  await printerClient.connect();
-  printerClient.startStatusPolling(STATUS_POLL_INTERVAL);
-  
-  // Setup camera
-  await setupCameraURL();
-
-  // Update status
-  printerStatus.connected = true;
-  if (printerName) {
-    printerStatus.printerName = printerName;
+  // Try to connect and handle errors
+  try {
+    await printerClient.connect();
+    printerClient.startStatusPolling(STATUS_POLL_INTERVAL);
+    // Setup camera
+    await setupCameraURL();
+    // Update status
+    printerStatus.connected = true;
+    if (printerName) {
+      printerStatus.printerName = printerName;
+    }
+    broadcastToClients({ type: 'status', data: buildStatusPayload() });
+  } catch (err) {
+    // Printer is offline or unreachable
+    printerStatus.connected = false;
+    printerStatus.state = 'Disconnected';
+    printerStatus.cameraAvailable = false;
+    printerStatus.lastUpdate = new Date().toISOString();
+    broadcastToClients({ type: 'status', data: buildStatusPayload() });
+    console.error('Failed to connect to printer:', err.message);
   }
-  broadcastToClients({ type: 'status', data: buildStatusPayload() });
 }
 
 /**
  * Start persistent camera stream from printer and relay to clients
  */
 async function startCameraStreaming() {
-  if (!cameraStreamURL) return;
+  if (!cameraStreamURL) {
+    printerStatus.cameraAvailable = false;
+    broadcastToClients({ type: 'status', data: buildStatusPayload() });
+    return;
+  }
 
   try {
     const response = await fetch(cameraStreamURL);
