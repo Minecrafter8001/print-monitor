@@ -1,3 +1,7 @@
+const DEBUG_DISABLE_LOCAL_IP_FILTER =
+  !('DEBUG_DISABLE_LOCAL_IP_FILTER' in process.env) ||
+  process.env.DEBUG_DISABLE_LOCAL_IP_FILTER === '' ||
+  process.env.DEBUG_DISABLE_LOCAL_IP_FILTER === 'true';
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
@@ -91,18 +95,18 @@ function pickForwardedIP(headerValue) {
 function getClientIP(req, socket) {
   // Prefer x-forwarded-for chain
   const xfwd = pickForwardedIP(req?.headers?.['x-forwarded-for']);
-  if (xfwd && !isLocal192(xfwd)) return xfwd;
+  if (xfwd && (DEBUG_DISABLE_LOCAL_IP_FILTER || !isLocal192(xfwd))) return xfwd;
 
   // Cloudflare headers
   const cfip = normalizeIP(req?.headers?.['cf-connecting-ip']);
-  if (cfip && cfip !== 'unknown' && !isLocal192(cfip)) return cfip;
+  if (cfip && cfip !== 'unknown' && (DEBUG_DISABLE_LOCAL_IP_FILTER || !isLocal192(cfip))) return cfip;
 
   const cfipv6 = normalizeIP(req?.headers?.['cf-connecting-ipv6']);
-  if (cfipv6 && cfipv6 !== 'unknown' && !isLocal192(cfipv6)) return cfipv6;
+  if (cfipv6 && cfipv6 !== 'unknown' && (DEBUG_DISABLE_LOCAL_IP_FILTER || !isLocal192(cfipv6))) return cfipv6;
 
   // Fallback to remote address if not local 192.168.x.x
   const remote = normalizeIP(socket?.remoteAddress || req?.socket?.remoteAddress);
-  if (remote && remote !== 'unknown' && !isLocal192(remote)) return remote;
+  if (remote && remote !== 'unknown' && (DEBUG_DISABLE_LOCAL_IP_FILTER || !isLocal192(remote))) return remote;
 
   return 'unknown';
 }
@@ -117,9 +121,8 @@ function getUserStats() {
   // Calculate unique active IPs for currently connected clients
   const activeWebIPs = new Set();
   webClients.forEach((ws) => {
-    if (ws.readyState === WebSocket.OPEN && ws._socket) {
-      const ip = getClientIP(ws.upgradeReq || ws, ws._socket);
-      if (ip && ip !== 'unknown') activeWebIPs.add(ip);
+    if (ws.readyState === WebSocket.OPEN && ws._clientIP && ws._clientIP !== 'unknown') {
+      activeWebIPs.add(ws._clientIP);
     }
   });
 
@@ -281,11 +284,14 @@ app.get('/api/admin', (req, res) => {
 
 // WebSocket connection handler for web clients
 wss.on('connection', (ws, req) => {
-  console.log('Web client connected');
+  const ip = getClientIP(req, ws._socket);
+  const userAgent = req.headers['user-agent'] || 'Unknown';
+  console.log(`[WebSocket] Client connected: IP=${ip}`);
   webClients.add(ws);
   // Track IP and counters
   try {
     const ip = getClientIP(req, ws._socket);
+    ws._clientIP = ip; // Store IP on WebSocket instance
     if (ip !== 'unknown') {
       webClientIPs.add(ip);
       const userAgent = req.headers['user-agent'] || 'Unknown';

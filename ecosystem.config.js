@@ -10,7 +10,8 @@ module.exports = {
       max_memory_restart: '300M',
       env: {
         NODE_ENV: 'production',
-        PORT: 3001
+        PORT: 3001,
+        DEBUG_DISABLE_LOCAL_IP_FILTER: 'false'
       }
     }
   ]
