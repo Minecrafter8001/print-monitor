@@ -1,7 +1,7 @@
 module.exports = {
   apps: [
     {
-      name: 'elegoo-print-monitor',
+      name: 'print-monitor',
       script: 'server.js',
       instances: 1,
       exec_mode: 'fork',
