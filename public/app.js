@@ -123,7 +123,7 @@ function updateUI(payload) {
         connectionText.textContent = 'Disconnected';
     }
 
-    const uniqueUsers = users.uniqueWebIPs || 0;
+    const uniqueUsers = users.activeUniqueWebIPs || 0;
     userCountText.textContent = `${uniqueUsers} user${uniqueUsers === 1 ? '' : 's'} online`;
 
     // Printer info

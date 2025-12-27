@@ -114,13 +114,29 @@ function updateUserStatsAndBroadcast() {
 }
 
 function getUserStats() {
+  // Calculate unique active IPs for currently connected clients
+  const activeWebIPs = new Set();
+  webClients.forEach((ws) => {
+    if (ws.readyState === WebSocket.OPEN && ws._socket) {
+      const ip = getClientIP(ws.upgradeReq || ws, ws._socket);
+      if (ip && ip !== 'unknown') activeWebIPs.add(ip);
+    }
+  });
+
+  // For camera, we don't have a direct set of active connections, so count IPs from cameraSubscribers
+  const activeCameraIPs = new Set();
+  cameraSubscribers.forEach((subscriber) => {
+    // We don't store IP per subscriber, so this will be empty unless you refactor cameraSubscribers to store IPs
+    // For now, fallback to cameraClientIPs, but ideally, refactor to track active camera IPs
+  });
+
   return {
     webClients: userStats.webClients,
     cameraClients: userStats.cameraClients,
     totalWebConnections: userStats.totalWebConnections,
     totalCameraConnections: userStats.totalCameraConnections,
-    uniqueWebIPs: webClientIPs.size,
-    uniqueCameraIPs: cameraClientIPs.size
+    activeUniqueWebIPs: activeWebIPs.size,
+    activeUniqueCameraIPs: userStats.cameraClients // fallback: number of active camera clients
   };
 }
 
