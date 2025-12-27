@@ -356,14 +356,12 @@ function updatePrinterStatus(data) {
     // Print state from CurrentStatus array
     if (s.CurrentStatus && s.CurrentStatus.length > 0) {
       const status = s.CurrentStatus[0];
-      const stateMap = {
-        0: 'Idle',
-        1: 'Printing',
-        2: 'Paused',
-        3: 'Completed',
-        4: 'Error'
-      };
-      printerStatus.state = stateMap[status] || 'Unknown';
+          printerStatus.state = status;
+          if (printerStatus.state === undefined) {
+            console.log('Unknown printer state code:', status);
+          }
+        console.log('Unknown printer state code:', status);
+      }
     }
 
     // Print progress

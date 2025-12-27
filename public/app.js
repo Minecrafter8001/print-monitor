@@ -130,11 +130,27 @@ function updateUI(payload) {
     document.getElementById('printerName').textContent = printer.printerName || '-';
 
     // Printer state
+    const stateMap = {
+        0: 'Idle',
+        1: 'Printing',
+        2: 'Paused',
+        3: 'Completed',
+        4: 'Error',
+        'Disconnected': 'Disconnected',
+        'Unknown': 'Unknown'
+    };
+    let stateValue = printer.state;
+    // If state is a number, map it
+    if (typeof stateValue === 'number' || (typeof stateValue === 'string' && /^\d+$/.test(stateValue))) {
+        stateValue = stateMap[stateValue] || 'Unknown';
+    } else if (typeof stateValue === 'string' && stateMap[stateValue]) {
+        stateValue = stateMap[stateValue];
+    }
     const stateElement = document.getElementById('printerState');
-    stateElement.textContent = printer.state || '-';
+    stateElement.textContent = stateValue || '-';
     stateElement.className = 'value state';
-    if (printer.state) {
-        stateElement.classList.add(printer.state.toLowerCase());
+    if (stateValue) {
+        stateElement.classList.add(stateValue.toLowerCase());
     }
 
     document.getElementById('currentFile').textContent = printer.currentFile || '-';
