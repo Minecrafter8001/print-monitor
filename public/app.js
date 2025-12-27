@@ -161,14 +161,14 @@ function updateUI(payload) {
 
     if (printer.remainingTime > 0 && printer.state !== 'idle') {
         document.getElementById('ReportedETA').textContent =
-            formatClockTime(new Date(now + printer.remainingTime * 1000));
+            formatClockTime(new Date(now.getTime() + printer.remainingTime * 1000));
     } else {
         document.getElementById('ReportedETA').textContent = '-';
     }
 
     if (printer.calculatedTime > 0 && printer.state !== 'idle') {
         document.getElementById('CalculatedETA').textContent =
-            formatClockTime(new Date(now + printer.calculatedTime * 1000));
+            formatClockTime(new Date(now.getTime() + printer.calculatedTime * 1000));
     } else {
         document.getElementById('CalculatedETA').textContent = '-';
     }
