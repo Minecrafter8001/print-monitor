@@ -1,5 +1,5 @@
-const client = require('./sdcp-client');
-const discovery = require('./printer-discovery');
+const SDCPClient = require('./sdcp-client');
+const PrinterDiscovery = require('./printer-discovery');
 const readline = require('readline');
 
 // Helper to prompt user
@@ -9,6 +9,8 @@ const rl = readline.createInterface({
 });
 
 let wsClient = null;
+
+const discovery = new PrinterDiscovery();
 
 function printMenu() {
 	console.log('\nElegoo WebSocket Tester');
@@ -34,64 +36,70 @@ async function main() {
 		if (choice === '0') break;
 		if (choice === '1') {
 			console.log('Discovering printers...');
-			discovery.discoverPrinters(3000, (printers) => {
+			try {
+				const printers = await discovery.discover(3000);
 				if (printers.length === 0) {
 					console.log('No printers found.');
 				} else {
 					printers.forEach((p, i) => {
-						console.log(`${i + 1}: ${p.Name} (${p.Ip})`);
+						console.log(`${i + 1}: ${p.Name || p.name || 'Unknown'} (${p.Ip || p.address})`);
 					});
 				}
-			});
+			} catch (err) {
+				console.error('Discovery error:', err);
+			}
 		} else if (choice === '2') {
 			printerIP = await ask('Enter printer IP: ');
-			wsClient = new client(printerIP);
-			wsClient.on('open', () => {
+			wsClient = new SDCPClient(printerIP);
+			try {
+				await wsClient.connect();
 				console.log('Connected to printer.');
-			});
-			wsClient.on('message', (msg) => {
-				try {
-					const data = JSON.parse(msg);
-					if (data.Data && data.Data.MainboardID) mainboardID = data.Data.MainboardID;
-				} catch {}
-				console.log('Received:', msg);
-			});
-			wsClient.on('close', () => {
-				console.log('Connection closed.');
-			});
-			wsClient.on('error', (err) => {
-				console.error('WebSocket error:', err);
-			});
+			} catch (err) {
+				console.error('Failed to connect:', err);
+				wsClient = null;
+			}
 		} else if (choice === '3') {
 			if (!wsClient) { console.log('Not connected.'); continue; }
-			wsClient.sendCommand(0, {}, 10000).then(res => {
+			try {
+				const res = await wsClient.sendCommand(0, {});
 				console.log('Status response:', res);
-			}).catch(console.error);
+			} catch (err) {
+				console.error(err);
+			}
 		} else if (choice === '4') {
 			if (!wsClient) { console.log('Not connected.'); continue; }
-			wsClient.sendCommand(1, {}, 10000).then(res => {
+			try {
+				const res = await wsClient.sendCommand(1, {});
 				console.log('Attributes response:', res);
-			}).catch(console.error);
+			} catch (err) {
+				console.error(err);
+			}
 		} else if (choice === '5') {
 			if (!wsClient) { console.log('Not connected.'); continue; }
-			wsClient.sendCommand(386, {}, 10000).then(res => {
+			try {
+				const res = await wsClient.sendCommand(386, {});
 				console.log('Camera URL response:', res);
-			}).catch(console.error);
+			} catch (err) {
+				console.error(err);
+			}
 		} else if (choice === '6') {
 			if (!wsClient) { console.log('Not connected.'); continue; }
 			const cmd = parseInt(await ask('Enter Cmd ID (number): '), 10);
 			const dataStr = await ask('Enter Data payload (JSON): ');
 			let data = {};
 			try { data = JSON.parse(dataStr); } catch { console.log('Invalid JSON, using empty object.'); }
-			wsClient.sendCommand(cmd, data, 10000).then(res => {
+			try {
+				const res = await wsClient.sendCommand(cmd, data);
 				console.log('Custom command response:', res);
-			}).catch(console.error);
+			} catch (err) {
+				console.error(err);
+			}
 		} else {
 			console.log('Unknown option.');
 		}
 	}
 	rl.close();
-	if (wsClient && wsClient.close) wsClient.close();
+	if (wsClient && wsClient.disconnect) wsClient.disconnect();
 	process.exit(0);
 }
 

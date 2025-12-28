@@ -40,8 +40,33 @@ let printerStatus = {
   remainingTime: 0,
   calculatedTime: null,
   cameraAvailable: false,
-  lastUpdate: null
+  lastUpdate: null,
+  customState: 0,
+  layers: {
+    total: 0,
+    finished: 0
+  }
 };
+
+/**
+ * Set custom status codes based on printer info
+ * @param {object} info - Raw printer info/status
+ */
+function setCustomState(info) {
+  if (!info || !info.Status) {
+    return;
+  }
+  const s = info.Status;
+  let code = 0;
+  // Example: Custom state 1: Printing but no file
+  if (s.CurrentStatus && s.CurrentStatus[0] === 1) {
+    if (!s.PrintInfo || !s.PrintInfo.Filename) {
+      code = 1;
+    }
+  }
+  // Add more custom state code logic here as needed
+  printerStatus.customState = code;
+}
 
 // WebSocket clients
 const webClients = new Set();
@@ -365,6 +390,7 @@ function updatePrinterStatus(data) {
     printerStatus.state = 'Disconnected';
     printerStatus.cameraAvailable = false;
     printerStatus.lastUpdate = new Date().toISOString();
+    printerStatus.customState = 0;
     broadcastToClients({ type: 'status', data: buildStatusPayload() });
     return;
   }
@@ -412,6 +438,10 @@ function updatePrinterStatus(data) {
       // Calculate precise progress from current/total layers (6 decimal places)
       const currentLayer = s.PrintInfo.CurrentLayer || 0;
       const totalLayer = s.PrintInfo.TotalLayer || 0;
+      printerStatus.layers = {
+        total: totalLayer,
+        finished: currentLayer
+      };
       if (totalLayer > 0) {
         printerStatus.layerProgress = Number(((currentLayer / totalLayer) * 100).toFixed(6));
       } else {
@@ -446,6 +476,9 @@ function updatePrinterStatus(data) {
       printerStatus.temperatures.enclosure.target = Math.round(s.TempTargetBox);
     }
   }
+
+  // Set custom state code
+  setCustomState(data);
 
   // Broadcast update to all web clients
   broadcastToClients({ type: 'status', data: buildStatusPayload() });
