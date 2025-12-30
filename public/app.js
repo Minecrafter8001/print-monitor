@@ -4,6 +4,8 @@ let reconnectInterval = null;
 let cameraInitialized = false;
 let snapshotTaken = false;
 let lastPrinterState = null;
+let frozenETA = null;
+let frozenETAState = null;
 
 // Settings object
 const defaultSettings = {
@@ -186,10 +188,44 @@ function updateUI(payload) {
     document.getElementById('remainingTime').textContent =
         formatDuration(printer.remainingTime);
 
-    document.getElementById('ReportedETA').textContent =
-        printer.remainingTime && Number.isFinite(printer.remainingTime)
-            ? formatClockTime(new Date(Date.now() + printer.remainingTime * 1000))
-            : '-';
+    // ETA freeze logic
+    // Freeze ETA when progress is 100 and state is NOT PRINTING; unfreeze when state is PRINTING
+    const etaElem = document.getElementById('ReportedETA');
+    const statusUpper = (printer.status || '').toUpperCase();
+    if (statusUpper === 'PRINTING') {
+        // Unfreeze ETA when printing
+        if (printer.remainingTime && Number.isFinite(printer.remainingTime)) {
+            etaElem.textContent = formatClockTime(new Date(Date.now() + printer.remainingTime * 1000));
+        } else {
+            etaElem.textContent = '-';
+        }
+        frozenETA = null;
+        frozenETAState = null;
+    } else if (progress >= 100) {
+        if (!frozenETA) {
+            // Only freeze if not already frozen
+            if (printer.remainingTime && Number.isFinite(printer.remainingTime)) {
+                frozenETA = formatClockTime(new Date(Date.now() + printer.remainingTime * 1000));
+            } else {
+                frozenETA = '-';
+            }
+            frozenETAState = statusUpper;
+        }
+        etaElem.textContent = frozenETA;
+    } else if (frozenETA) {
+        // Stay frozen while not printing and after 100%
+        etaElem.textContent = frozenETA;
+    } else {
+        // Default ETA logic
+        if (printer.remainingTime && Number.isFinite(printer.remainingTime)) {
+            etaElem.textContent = formatClockTime(new Date(Date.now() + printer.remainingTime * 1000));
+        } else {
+            etaElem.textContent = '-';
+        }
+        frozenETA = null;
+        frozenETAState = null;
+    }
+
     // Layer info
     const layers = printer.layers || { current: 0, total: 0 };
     const completedLayers = layers.current || 0;
