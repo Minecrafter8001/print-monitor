@@ -267,9 +267,8 @@ function updateUI(payload) {
                     cameraInitialized = true;
 
                     cameraFeed.onload = function () {
-                        // Use mapped state for comparison
-                        const mappedState = (typeof printer.state === 'number' || (typeof printer.state === 'string' && /^\d+$/.test(printer.state))) ? stateMap[printer.state] || 'Unknown' : (stateMap[printer.state] || printer.state || 'Unknown');
-                        if (!snapshotTaken && mappedState === "IDLE") {
+                        // Use status directly for snapshot logic
+                        if (!snapshotTaken && (printer.status || '').toUpperCase() === "IDLE") {
                             const canvas = document.createElement('canvas');
                             canvas.width = cameraFeed.naturalWidth;
                             canvas.height = cameraFeed.naturalHeight;
