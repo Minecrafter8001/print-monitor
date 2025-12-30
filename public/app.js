@@ -186,6 +186,10 @@ function updateUI(payload) {
     document.getElementById('remainingTime').textContent =
         formatDuration(printer.remainingTime);
 
+    document.getElementById('ReportedETA').textContent =
+        printer.remainingTime && Number.isFinite(printer.remainingTime)
+            ? formatClockTime(new Date(Date.now() + printer.remainingTime * 1000))
+            : '-';
     // Layer info
     const layers = printer.layers || { current: 0, total: 0 };
     const completedLayers = layers.current || 0;
