@@ -1,0 +1,75 @@
+const { parseStatusPayload, mapStatusIntToLabel } = require('../src/status-utils');
+
+describe('status-utils', () => {
+  describe('mapStatusIntToLabel', () => {
+    test('maps recovery printing to PRINTING', () => {
+      expect(mapStatusIntToLabel(13)).toBe('PRINTING');
+    });
+
+    test('returns null for unknown code', () => {
+      expect(mapStatusIntToLabel(999)).toBeNull();
+    });
+  });
+
+  describe('parseStatusPayload', () => {
+    const cases = [
+      {
+        name: 'Machine-level HOMING (array)',
+        payload: {
+          Status: {
+            CurrentStatus: [9],
+            PrintInfo: { Status: 0, Progress: 0 }
+          }
+        },
+        expect: { status: 'HOMING', status_code: 9 }
+      },
+      {
+        name: 'Machine-level HOMING (int)',
+        payload: {
+          Status: {
+            CurrentStatus: 9,
+            PrintInfo: { Status: 0, Progress: 0 }
+          }
+        },
+        expect: { status: 'HOMING', status_code: 9 }
+      },
+      {
+        name: 'Print-job PREHEATING overrides unknown machine status',
+        payload: {
+          Status: {
+            CurrentStatus: [0],
+            PrintInfo: { Status: 16, Progress: 0 }
+          }
+        },
+        expect: { status: 'IDLE', status_code: 0 }
+      },
+      {
+        name: 'Unknown status (missing CurrentStatus)',
+        payload: {
+          Status: {
+            PrintInfo: { Status: 16, Progress: 0 }
+          }
+        },
+        expect: { status: 'UNKNOWN', status_code: null }
+      },
+      {
+        name: 'PrintInfo status 13 forces PRINTING',
+        payload: {
+          Status: {
+            CurrentStatus: [0],
+            PrintInfo: { Status: 13, Progress: 50 }
+          }
+        },
+        expect: { status: 'PRINTING', status_code: 13 }
+      }
+    ];
+
+    cases.forEach(({ name, payload, expect: expected }) => {
+      test(name, () => {
+        const result = parseStatusPayload(payload);
+        expect(result.status).toBe(expected.status);
+        expect(result.status_code).toBe(expected.status_code);
+      });
+    });
+  });
+});

@@ -183,6 +183,14 @@ elegoo-print-monitor/
     └── app.js            # Client-side JavaScript
 ```
 
+### Testing
+
+Run unit tests with:
+
+```bash
+npm test
+```
+
 ### Dependencies
 
 - **express**: Web server framework
