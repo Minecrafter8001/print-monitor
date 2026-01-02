@@ -4,12 +4,9 @@ const {
   JOB_STATUS
 } = require('../utils/status-codes');
 
-const PRINTING_RECOVERY = MACHINE_STATUS.PRINTING_RECOVERY;
-const JOB_PRINTING_RECOVERY = JOB_STATUS.PRINTING_RECOVERY;
-
 function mapStatusIntToLabel(statusInt) {
   if ([18, 19, 21].includes(statusInt)) return 'LOADING';
-  if (statusInt === PRINTING_RECOVERY) return 'PRINTING';
+  if (statusInt === MACHINE_STATUS.PRINTING_RECOVERY) return 'PRINTING';
   if (MACHINE_STATUS_LABELS[statusInt]) return MACHINE_STATUS_LABELS[statusInt];
   return null;
 }
@@ -22,9 +19,11 @@ function parseStatusPayload(data) {
   let status = mapStatusIntToLabel(statusCode) || 'UNKNOWN';
 
   const jobStatusCode = statusBlock.PrintInfo?.Status ?? null;
-  if (jobStatusCode === JOB_PRINTING_RECOVERY) {
+  if (jobStatusCode === JOB_STATUS.PRINTING_RECOVERY) {
     status = 'PRINTING';
-    statusCode = JOB_PRINTING_RECOVERY;
+    if (statusCode == null) {
+      statusCode = jobStatusCode;
+    }
   }
 
   return { status, status_code: statusCode };

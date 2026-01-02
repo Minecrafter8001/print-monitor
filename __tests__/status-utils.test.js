@@ -63,7 +63,7 @@ describe('status-utils', () => {
             PrintInfo: { Status: JOB_PRINTING_RECOVERY, Progress: 50 }
           }
         },
-        expect: { status: 'PRINTING', status_code: JOB_PRINTING_RECOVERY }
+        expect: { status: 'PRINTING', status_code: 0 }
       }
     ];
 

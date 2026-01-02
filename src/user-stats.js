@@ -1,4 +1,4 @@
-const isValidIP = (ip) => ip && ip !== 'unknown';
+const { isValidIP } = require('./ip-utils');
 
 class UserStats {
   constructor() {

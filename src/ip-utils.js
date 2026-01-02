@@ -1,3 +1,5 @@
+const isValidIP = (ip) => ip && ip !== 'unknown';
+
 function normalizeIP(ip) {
   if (!ip) return 'unknown';
   if (ip.startsWith('::ffff:')) {
@@ -44,6 +46,7 @@ function getClientIP(req, socket, disableLocalFilter = false) {
 }
 
 module.exports = {
+  isValidIP,
   normalizeIP,
   isLocal192,
   isLocalIP,
