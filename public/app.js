@@ -2,6 +2,8 @@
 let ws = null;
 let reconnectInterval = null;
 let cameraInitialized = false;
+let useH264 = false;
+let h264Supported = false;
 let snapshotTaken = false;
 let lastPrinterState = null;
 let frozenETA = null;
@@ -9,7 +11,8 @@ let frozenETAState = null;
 
 // Settings object
 const defaultSettings = {
-    pauseOnIdle: true
+    pauseOnIdle: true,
+    useH264: true
 };
 
 let settings = loadSettings();
@@ -253,58 +256,73 @@ function updateUI(payload) {
     // ---------------- CAMERA LOGIC (UNCHANGED) ----------------
 
     const cameraFeed = document.getElementById('cameraFeed');
+    const h264Video = document.getElementById('cameraVideo');
     const cameraPlaceholder = document.getElementById('cameraPlaceholder');
     const cameraOverlay = document.getElementById('cameraOverlay');
 
     // Use mapped state value for all logic
     lastPrinterState = status;
 
+    const preferH264 = h264Supported && settings.useH264;
+
+    const showPlaceholder = () => {
+        cameraFeed.style.display = 'none';
+        h264Video.style.display = 'none';
+        cameraPlaceholder.style.display = 'flex';
+        cameraOverlay.style.display = 'none';
+        cameraInitialized = false;
+    };
+
     if (printer.cameraAvailable) {
-        if (status === "IDLE") {
-            if (settings.pauseOnIdle) {
-                if (!cameraInitialized) {
-                    cameraFeed.src = '/api/camera';
-                    cameraInitialized = true;
-
-                    cameraFeed.onload = function () {
-                        // Use status directly for snapshot logic
-                        if (!snapshotTaken && (printer.status || '').toUpperCase() === "IDLE") {
-                            const canvas = document.createElement('canvas');
-                            canvas.width = cameraFeed.naturalWidth;
-                            canvas.height = cameraFeed.naturalHeight;
-                            const ctx = canvas.getContext('2d');
-                            ctx.drawImage(cameraFeed, 0, 0);
-                            cameraFeed.src = canvas.toDataURL('image/jpeg');
-                            snapshotTaken = true;
-                            cameraFeed.onload = null;
-                        }
-                    };
-                }
-
-                cameraFeed.style.display = 'block';
-                cameraPlaceholder.style.display = 'none';
-                cameraOverlay.style.display = 'flex';
-                return;
-            } else {
+        cameraPlaceholder.style.display = 'none';
+        const isIdle = status === 'IDLE';
+        if (preferH264) {
+            // Use H.264 <video>
+            if (!cameraInitialized || h264Video.src !== '/api/camera/h264') {
+                h264Video.src = '/api/camera/h264';
+                h264Video.style.display = 'block';
+                cameraFeed.style.display = 'none';
+                h264Video.play().catch(() => {});
                 cameraInitialized = true;
+            }
+            if (isIdle && settings.pauseOnIdle) {
+                h264Video.pause();
+                cameraOverlay.style.display = 'flex';
+            } else {
+                cameraOverlay.style.display = 'none';
+                h264Video.play().catch(() => {});
+            }
+        } else {
+            // Fallback to MJPEG <img>
+            if (!cameraInitialized) {
+                cameraFeed.src = '/api/camera';
+                cameraInitialized = true;
+
+                cameraFeed.onload = function () {
+                    if (!snapshotTaken && isIdle && settings.pauseOnIdle) {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = cameraFeed.naturalWidth;
+                        canvas.height = cameraFeed.naturalHeight;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(cameraFeed, 0, 0);
+                        cameraFeed.src = canvas.toDataURL('image/jpeg');
+                        snapshotTaken = true;
+                        cameraFeed.onload = null;
+                    }
+                };
+            }
+            if (isIdle && settings.pauseOnIdle) {
+                cameraOverlay.style.display = 'flex';
+            } else {
                 snapshotTaken = false;
                 cameraFeed.src = '/api/camera';
-                cameraFeed.style.display = 'block';
-                cameraPlaceholder.style.display = 'none';
                 cameraOverlay.style.display = 'none';
-                return;
             }
+            cameraFeed.style.display = 'block';
+            h264Video.style.display = 'none';
         }
-
-        cameraFeed.src = '/api/camera';
-        cameraInitialized = true;
-        snapshotTaken = false;
-        cameraFeed.style.display = 'block';
-        cameraPlaceholder.style.display = 'none';
-        cameraOverlay.style.display = 'none';
     } else {
-        cameraFeed.style.display = 'none';
-        cameraPlaceholder.style.display = 'flex';
+        showPlaceholder();
     }
 }
 
@@ -312,10 +330,14 @@ function updateUI(payload) {
 
 function toggleCameraStream() {
     const cameraFeed = document.getElementById('cameraFeed');
+    const h264Video = document.getElementById('cameraVideo');
     const cameraOverlay = document.getElementById('cameraOverlay');
+    const isIdle = (lastPrinterState || '').toLowerCase() === 'idle';
 
-    if (lastPrinterState === 'idle' && cameraFeed.style.display === 'block') {
-        if (settings.pauseOnIdle) {
+    if (!isIdle) return;
+
+    if (settings.pauseOnIdle) {
+        if (cameraFeed.style.display === 'block') {
             if (!snapshotTaken) {
                 const canvas = document.createElement('canvas');
                 canvas.width = cameraFeed.naturalWidth;
@@ -325,12 +347,19 @@ function toggleCameraStream() {
                 cameraFeed.src = canvas.toDataURL('image/jpeg');
                 snapshotTaken = true;
             }
-            cameraOverlay.style.display = 'flex';
-        } else {
-            snapshotTaken = false;
-            cameraFeed.src = '/api/camera';
-            cameraOverlay.style.display = 'none';
+        } else if (h264Video.style.display === 'block') {
+            h264Video.pause();
         }
+        cameraOverlay.style.display = 'flex';
+    } else {
+        snapshotTaken = false;
+        if (cameraFeed.style.display === 'block') {
+            cameraFeed.src = '/api/camera';
+        }
+        if (h264Video.style.display === 'block') {
+            h264Video.play().catch(() => {});
+        }
+        cameraOverlay.style.display = 'none';
     }
 }
 
@@ -352,8 +381,29 @@ function initPauseOnIdleButton() {
     });
 }
 
+function initH264Toggle() {
+    const btn = document.getElementById('h264ToggleBtn');
+    if (!btn) return;
+    h264Supported = !!document.createElement('video').canPlayType('video/mp4; codecs="avc1.42E01E"');
+    if (!h264Supported) {
+        btn.style.display = 'none';
+        settings.useH264 = false;
+        return;
+    }
+    btn.classList.toggle('active', settings.useH264);
+    btn.addEventListener('click', () => {
+        settings.useH264 = !settings.useH264;
+        saveSettings();
+        btn.classList.toggle('active', settings.useH264);
+        cameraInitialized = false;
+        snapshotTaken = false;
+        updateUI({ printer: { cameraAvailable: true, status: lastPrinterState }, users: {} });
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Elegoo Print Monitor starting...');
     initPauseOnIdleButton();
+    initH264Toggle();
     connectWebSocket();
 });

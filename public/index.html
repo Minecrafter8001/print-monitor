@@ -129,11 +129,16 @@
 
                         <span class="btn-text">Pause on Idle</span>
                     </button>
+                    <button id="h264ToggleBtn" class="pause-on-idle-btn" title="Toggle H.264 stream">
+                        <span class="btn-icon">🎥</span>
+                        <span class="btn-text">H.264</span>
+                    </button>
                 </div>
                 <div class="camera-container" id="cameraContainer">
                     <div class="camera-placeholder" id="cameraPlaceholder">
                         <span>No camera feed available</span>
                     </div>
+                    <video id="cameraVideo" class="camera-feed" style="display: none;" autoplay muted playsinline></video>
                     <img id="cameraFeed" class="camera-feed" style="display: none;" alt="Printer camera feed">
                     <div class="camera-overlay" id="cameraOverlay" style="display: none;">
                         <div class="overlay-message">
