@@ -1,4 +1,4 @@
-const { parseStatusPayload, mapStatusIntToLabel } = require('../src/status-utils');
+const { parseStatusPayload, mapStatusIntToLabel } = require('../utils/status-utils');
 const { MACHINE_STATUS, JOB_STATUS } = require('../utils/status-codes');
 const PRINTING_RECOVERY = MACHINE_STATUS.PRINTING_RECOVERY;
 const JOB_PRINTING_RECOVERY = JOB_STATUS.PRINTING_RECOVERY;

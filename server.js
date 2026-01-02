@@ -6,10 +6,10 @@ const DEBUG_DISABLE_LOCAL_IP_FILTER =
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
-const { getClientIP, isLocalIP } = require('./src/ip-utils');
-const { parseStatusPayload } = require('./src/status-utils');
-const { startH264Transcode } = require('./src/camera-transcoder');
-const UserStats = require('./src/user-stats');
+require('./utils/logger');
+const { getClientIP, isLocalIP } = require('./utils/ip-utils');
+const { parseStatusPayload } = require('./utils/status-utils');
+const UserStats = require('./utils/user-stats');
 
 const PrinterDiscovery = require('./utils/printer-discovery');
 const SDCPClient = require('./utils/sdcp-client');
@@ -192,80 +192,6 @@ app.get('/api/camera', async (req, res) => {
 });
 
 // API endpoint to serve H.264 transcoded camera stream
-app.get('/api/camera/h264', (req, res) => {
-  if (!cameraStreamURL) {
-    return res.status(503).json({ success: false, error: 'Camera stream not available' });
-  }
-  let transcoder;
-  let firstChunk = false;
-  let watchdog;
-  try {
-    transcoder = startH264Transcode(cameraStreamURL, (msg) => {
-      console.warn('[H264] ffmpeg:', msg.trim());
-    });
-  } catch (err) {
-    console.error('Failed to start h264 transcoder:', err.message);
-    return res.status(500).json({ success: false, error: err.message });
-  }
-
-  res.setHeader('Content-Type', 'video/mp4');
-  res.setHeader('Cache-Control', 'no-store');
-  res.setHeader('Transfer-Encoding', 'chunked');
-
-  transcoder.stdout.on('data', () => {
-    firstChunk = true;
-    if (watchdog) {
-      clearTimeout(watchdog);
-      watchdog = null;
-    }
-  });
-  transcoder.stdout.pipe(res);
-
-  watchdog = setTimeout(() => {
-    if (!firstChunk) {
-      abort();
-      if (!res.headersSent) {
-        res.status(502).json({ success: false, error: 'Transcode produced no data' });
-      } else {
-        res.end();
-      }
-    }
-  }, 5000);
-
-  const abort = () => {
-    if (transcoder) {
-      transcoder.kill('SIGINT');
-      transcoder = null;
-    }
-    if (watchdog) {
-      clearTimeout(watchdog);
-      watchdog = null;
-    }
-  };
-
-  transcoder.on('error', (err) => {
-    console.error('Transcoder error:', err.message);
-    abort();
-    if (!res.headersSent) {
-      res.status(500).json({ success: false, error: err.message });
-    } else {
-      res.end();
-    }
-  });
-
-  req.on('close', abort);
-  req.on('error', abort);
-  res.on('close', abort);
-  res.on('error', abort);
-
-  transcoder.on('close', (code) => {
-    if (!firstChunk && !res.headersSent) {
-      res.status(502).json({ success: false, error: 'Transcode failed to start' });
-    }
-    abort();
-  });
-});
-
 // API endpoint to connect to a specific printer
 app.post('/api/connect/:ip', express.json(), async (req, res) => {
   try {

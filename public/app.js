@@ -2,8 +2,6 @@
 let ws = null;
 let reconnectInterval = null;
 let cameraInitialized = false;
-let useH264 = false;
-let h264Supported = false;
 let snapshotTaken = false;
 let lastPrinterState = null;
 let frozenETA = null;
@@ -11,8 +9,7 @@ let frozenETAState = null;
 
 // Settings object
 const defaultSettings = {
-    pauseOnIdle: true,
-    useH264: true
+    pauseOnIdle: true
 };
 
 let settings = loadSettings();
@@ -256,74 +253,45 @@ function updateUI(payload) {
     // ---------------- CAMERA LOGIC (UNCHANGED) ----------------
 
     const cameraFeed = document.getElementById('cameraFeed');
-    const h264Video = document.getElementById('cameraVideo');
     const cameraPlaceholder = document.getElementById('cameraPlaceholder');
     const cameraOverlay = document.getElementById('cameraOverlay');
 
     // Use mapped state value for all logic
     lastPrinterState = status;
 
-    const preferH264 = h264Supported && settings.useH264;
+    if (printer.cameraAvailable) {
+        const isIdle = status === "IDLE";
+        if (!cameraInitialized) {
+            cameraFeed.src = '/api/camera';
+            cameraInitialized = true;
 
-    const showPlaceholder = () => {
+            cameraFeed.onload = function () {
+                if (!snapshotTaken && isIdle && settings.pauseOnIdle) {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = cameraFeed.naturalWidth;
+                    canvas.height = cameraFeed.naturalHeight;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(cameraFeed, 0, 0);
+                    cameraFeed.src = canvas.toDataURL('image/jpeg');
+                    snapshotTaken = true;
+                    cameraFeed.onload = null;
+                }
+            };
+        }
+        if (isIdle && settings.pauseOnIdle) {
+            cameraOverlay.style.display = 'flex';
+        } else {
+            snapshotTaken = false;
+            cameraFeed.src = '/api/camera';
+            cameraOverlay.style.display = 'none';
+        }
+        cameraFeed.style.display = 'block';
+        cameraPlaceholder.style.display = 'none';
+    } else {
         cameraFeed.style.display = 'none';
-        h264Video.style.display = 'none';
         cameraPlaceholder.style.display = 'flex';
         cameraOverlay.style.display = 'none';
         cameraInitialized = false;
-    };
-
-    if (printer.cameraAvailable) {
-        cameraPlaceholder.style.display = 'none';
-        const isIdle = status === 'IDLE';
-        if (preferH264) {
-            // Use H.264 <video>
-            if (!cameraInitialized || h264Video.src !== 'http://localhost:3000/api/camera/h264') {
-                h264Video.src = '/api/camera/h264';
-                h264Video.style.display = 'block';
-                cameraFeed.style.display = 'none';
-                h264Video.load();
-                h264Video.play().catch(e => console.warn('H264 play failed:', e));
-                cameraInitialized = true;
-            }
-            if (isIdle && settings.pauseOnIdle) {
-                h264Video.pause();
-                cameraOverlay.style.display = 'flex';
-            } else {
-                cameraOverlay.style.display = 'none';
-                h264Video.play().catch(() => {});
-            }
-        } else {
-            // Fallback to MJPEG <img>
-            if (!cameraInitialized) {
-                cameraFeed.src = '/api/camera';
-                cameraInitialized = true;
-
-                cameraFeed.onload = function () {
-                    if (!snapshotTaken && isIdle && settings.pauseOnIdle) {
-                        const canvas = document.createElement('canvas');
-                        canvas.width = cameraFeed.naturalWidth;
-                        canvas.height = cameraFeed.naturalHeight;
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(cameraFeed, 0, 0);
-                        cameraFeed.src = canvas.toDataURL('image/jpeg');
-                        snapshotTaken = true;
-                        cameraFeed.onload = null;
-                    }
-                };
-            }
-            if (isIdle && settings.pauseOnIdle) {
-                cameraOverlay.style.display = 'flex';
-            } else {
-                snapshotTaken = false;
-                cameraFeed.src = '/api/camera';
-                cameraOverlay.style.display = 'none';
-            }
-            cameraFeed.style.display = 'block';
-            h264Video.style.display = 'none';
-        }
-    } else {
-        showPlaceholder();
     }
 }
 
@@ -331,7 +299,6 @@ function updateUI(payload) {
 
 function toggleCameraStream() {
     const cameraFeed = document.getElementById('cameraFeed');
-    const h264Video = document.getElementById('cameraVideo');
     const cameraOverlay = document.getElementById('cameraOverlay');
     const isIdle = (lastPrinterState || '').toLowerCase() === 'idle';
 
@@ -348,17 +315,12 @@ function toggleCameraStream() {
                 cameraFeed.src = canvas.toDataURL('image/jpeg');
                 snapshotTaken = true;
             }
-        } else if (h264Video.style.display === 'block') {
-            h264Video.pause();
         }
         cameraOverlay.style.display = 'flex';
     } else {
         snapshotTaken = false;
         if (cameraFeed.style.display === 'block') {
             cameraFeed.src = '/api/camera';
-        }
-        if (h264Video.style.display === 'block') {
-            h264Video.play().catch(() => {});
         }
         cameraOverlay.style.display = 'none';
     }
@@ -382,29 +344,8 @@ function initPauseOnIdleButton() {
     });
 }
 
-function initH264Toggle() {
-    const btn = document.getElementById('h264ToggleBtn');
-    if (!btn) return;
-    h264Supported = !!document.createElement('video').canPlayType('video/mp4; codecs="avc1.42E01E"');
-    if (!h264Supported) {
-        btn.style.display = 'none';
-        settings.useH264 = false;
-        return;
-    }
-    btn.classList.toggle('active', settings.useH264);
-    btn.addEventListener('click', () => {
-        settings.useH264 = !settings.useH264;
-        saveSettings();
-        btn.classList.toggle('active', settings.useH264);
-        cameraInitialized = false;
-        snapshotTaken = false;
-        updateUI({ printer: { cameraAvailable: true, status: lastPrinterState }, users: {} });
-    });
-}
-
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Elegoo Print Monitor starting...');
     initPauseOnIdleButton();
-    initH264Toggle();
     connectWebSocket();
 });

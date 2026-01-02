@@ -1,4 +1,4 @@
-const { normalizeIP, isLocalIP, pickForwardedIP, getClientIP } = require('../src/ip-utils');
+const { normalizeIP, isLocalIP, pickForwardedIP, getClientIP } = require('../utils/ip-utils');
 
 describe('ip-utils', () => {
   test('normalizes IPv4-mapped IPv6', () => {
