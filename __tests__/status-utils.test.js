@@ -55,7 +55,7 @@ describe('status-utils', () => {
         expect: { status: 'UNKNOWN', status_code: null }
       },
       {
-        name: 'PrintInfo status 13 forces PRINTING',
+        name: 'PrintInfo status PRINTING_RECOVERY forces PRINTING',
         payload: {
           Status: {
             CurrentStatus: [0],
