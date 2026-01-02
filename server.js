@@ -8,6 +8,7 @@ const http = require('http');
 const WebSocket = require('ws');
 const { getClientIP, isLocalIP } = require('./src/ip-utils');
 const { parseStatusPayload } = require('./src/status-utils');
+const { startH264Transcode } = require('./src/camera-transcoder');
 const UserStats = require('./src/user-stats');
 
 const PrinterDiscovery = require('./utils/printer-discovery');
@@ -188,6 +189,47 @@ app.get('/api/camera', async (req, res) => {
   req.on('close', cleanup);
   req.on('error', cleanup);
   res.on('error', cleanup);
+});
+
+// API endpoint to serve H.264 transcoded camera stream
+app.get('/api/camera/h264', (req, res) => {
+  if (!cameraStreamURL) {
+    return res.status(503).json({ success: false, error: 'Camera stream not available' });
+  }
+  let transcoder;
+  try {
+    transcoder = startH264Transcode(cameraStreamURL);
+  } catch (err) {
+    console.error('Failed to start h264 transcoder:', err.message);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+
+  res.setHeader('Content-Type', 'video/mp4');
+  res.setHeader('Transfer-Encoding', 'chunked');
+
+  transcoder.stdout.pipe(res);
+
+  const abort = () => {
+    if (transcoder) {
+      transcoder.kill('SIGINT');
+      transcoder = null;
+    }
+  };
+
+  transcoder.on('error', (err) => {
+    console.error('Transcoder error:', err.message);
+    abort();
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, error: err.message });
+    } else {
+      res.end();
+    }
+  });
+
+  req.on('close', abort);
+  req.on('error', abort);
+  res.on('close', abort);
+  res.on('error', abort);
 });
 
 // API endpoint to connect to a specific printer
