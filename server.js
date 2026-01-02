@@ -1,3 +1,4 @@
+
 const DEBUG_DISABLE_LOCAL_IP_FILTER =
   !('DEBUG_DISABLE_LOCAL_IP_FILTER' in process.env) ||
   process.env.DEBUG_DISABLE_LOCAL_IP_FILTER === '' ||
@@ -66,7 +67,7 @@ let defaultPrinterStatus = {
   status_code: null,
   prev_status: null
 };
-let printerStatus = defaultPrinterStatus;
+let printerStatus = { ...defaultPrinterStatus };
 /**
  * Set custom status codes based on printer info
  * @param {object} info - Raw printer info/status
@@ -158,6 +159,22 @@ function getClientIP(req, socket) {
 function updateUserStatsAndBroadcast() {
   printerStatus.users = getUserStats();
   // Notify connected web clients of updated stats
+  broadcastToClients({ type: 'status', data: buildStatusPayload() });
+}
+
+
+
+// Set printer status to disconnected and broadcast
+function setDisconnectedStatus() {
+  if (
+    printerStatus.connected === false &&
+    printerStatus.printerName === 'Unknown' &&
+    printerStatus.state === 'Disconnected'
+  ) return;
+  printerStatus = {
+    ...defaultPrinterStatus,
+    lastUpdate: new Date().toISOString()
+  };
   broadcastToClients({ type: 'status', data: buildStatusPayload() });
 }
 
@@ -420,6 +437,11 @@ function parseStatusPayload(data) {
 }
 
 function updatePrinterStatus(data) {
+  // Prevent status update if already disconnected
+  if (printerStatus.connected === false) {
+    setDisconnectedStatus();
+    return;
+  }
   if (!data) {
     // Printer is unreachable or offline
     printerStatus.connected = false;
@@ -449,8 +471,6 @@ function updatePrinterStatus(data) {
   if (data.Attributes) {
     printerStatus.printerName = data.Attributes.Name || printerStatus.printerName;
   }
-
-
 
   // Only update status fields if this is a real status payload (not a response/ack)
   if (data.Status) {
@@ -562,25 +582,20 @@ async function connectToPrinter(printerIP, printerName = null) {
     printerClient.disconnect();
   }
 
-
   // Create new connection
   printerClient = new SDCPClient(printerIP);
+  // Always re-attach status handler
   printerClient.onStatus(updatePrinterStatus);
 
   // Listen for disconnect/error events from SDCP client
   if (typeof printerClient.on === 'function') {
     printerClient.on('disconnect', () => {
-      printerStatus.connected = false;
-      printerStatus.state = 'Disconnected';
-      printerStatus.cameraAvailable = false;
-      printerStatus.lastUpdate = new Date().toISOString();
+      setDisconnectedStatus();
+      // Immediately broadcast status to all clients after disconnect
       broadcastToClients({ type: 'status', data: buildStatusPayload() });
     });
     printerClient.on('error', () => {
-      printerStatus.connected = false;
-      printerStatus.state = 'Disconnected';
-      printerStatus.cameraAvailable = false;
-      printerStatus.lastUpdate = new Date().toISOString();
+      setDisconnectedStatus();
       broadcastToClients({ type: 'status', data: buildStatusPayload() });
     });
   }
@@ -598,13 +613,14 @@ async function connectToPrinter(printerIP, printerName = null) {
     if (printerName) {
       printerStatus.printerName = printerName;
     }
+    // Immediately broadcast status to all clients after reconnect
     broadcastToClients({ type: 'status', data: buildStatusPayload() });
   } catch (err) {
-    // Printer is offline or unreachable
-    printerStatus.connected = false;
-    printerStatus.state = 'Disconnected';
-    printerStatus.cameraAvailable = false;
-    printerStatus.lastUpdate = new Date().toISOString();
+    // Printer is offline or unreachable: fully reset status and broadcast
+    printerStatus = {
+      ...defaultPrinterStatus,
+      lastUpdate: new Date().toISOString()
+    };
     broadcastToClients({ type: 'status', data: buildStatusPayload() });
     console.error('Failed to connect to printer:', err.message);
   }

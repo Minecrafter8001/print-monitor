@@ -1,11 +1,14 @@
 const WebSocket = require('ws');
 const { v4: uuidv4 } = require('uuid');
+const EventEmitter = require('events');
 
 /**
  * SDCP (Smart Device Communication Protocol) client for Elegoo printers
  */
-class SDCPClient {
+
+class SDCPClient extends EventEmitter {
   constructor(printerIP) {
+    super();
     this.printerIP = printerIP;
     this.wsPort = 3030;
     this.wsPath = '/websocket';
@@ -30,6 +33,8 @@ class SDCPClient {
       this.ws.on('open', () => {
         console.log('WebSocket connected');
         this.connected = true;
+        // Start keepalive when connected
+        this.startKeepAlive();
         resolve();
       });
 
@@ -39,6 +44,10 @@ class SDCPClient {
 
       this.ws.on('error', (err) => {
         console.error('WebSocket error:', err);
+        this.connected = false;
+        this.stopStatusPolling();
+        this.stopKeepAlive();
+        this.emit('error', err);
         if (!this.connected) {
           reject(err);
         }
@@ -47,6 +56,9 @@ class SDCPClient {
       this.ws.on('close', () => {
         console.log('WebSocket disconnected');
         this.connected = false;
+        this.stopStatusPolling();
+        this.stopKeepAlive();
+        this.emit('disconnect');
         this.scheduleReconnect();
       });
 
@@ -61,15 +73,14 @@ class SDCPClient {
    */
   scheduleReconnect() {
     if (this.reconnectInterval) return;
-    
     this.reconnectInterval = setInterval(async () => {
       console.log('Attempting to reconnect...');
       try {
         await this.connect();
         clearInterval(this.reconnectInterval);
         this.reconnectInterval = null;
-        // Re-request status after reconnection
-        this.requestStatus();
+        // Only start polling after successful reconnect
+        this.startStatusPolling();
       } catch (err) {
         console.error('Reconnection failed:', err.message);
       }
@@ -222,13 +233,17 @@ class SDCPClient {
    */
   startStatusPolling(interval = 2000) {
     this.stopStatusPolling();
+    // Only poll if connected
     this.pollingInterval = setInterval(() => {
-      this.requestStatus();
+      if (this.connected) {
+        this.requestStatus();
+      }
     }, interval);
-    
     // Get initial status
-    this.requestStatus();
-    this.requestAttributes();
+    if (this.connected) {
+      this.requestStatus();
+      this.requestAttributes();
+    }
   }
 
   /**
@@ -242,10 +257,34 @@ class SDCPClient {
   }
 
   /**
+   * Start periodic keepalive (SDCP status command)
+   */
+  startKeepAlive(interval = 30000) {
+    this.stopKeepAlive();
+    this.keepAliveInterval = setInterval(() => {
+      if (this.connected) {
+        // Send harmless status command as keepalive
+        this.sendCommand(0).catch(() => {});
+      }
+    }, interval);
+  }
+
+  /**
+   * Stop periodic keepalive
+   */
+  stopKeepAlive() {
+    if (this.keepAliveInterval) {
+      clearInterval(this.keepAliveInterval);
+      this.keepAliveInterval = null;
+    }
+  }
+
+  /**
    * Disconnect from printer
    */
   disconnect() {
     this.stopStatusPolling();
+    this.stopKeepAlive();
     if (this.reconnectInterval) {
       clearInterval(this.reconnectInterval);
       this.reconnectInterval = null;
