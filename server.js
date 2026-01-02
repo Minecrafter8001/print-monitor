@@ -211,6 +211,7 @@ app.get('/api/admin', (req, res) => {
     return res.status(404).type('text/html').send('<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<title>Error</title>\n</head>\n<body>\n<pre>Cannot GET /api/admin</pre>\n</body>\n</html>\n');
   }
 
+  const statsSnapshot = userStats.getSnapshot();
   const { webClients: webClientsList, cameraClients: cameraClientsList } = userStats.getClientLists();
 
   res.json({
@@ -219,14 +220,14 @@ app.get('/api/admin', (req, res) => {
       accessIP: clientIP,
       timestamp: new Date().toISOString(),
       webClients: {
-        active: userStats.getSnapshot().webClients,
-        total: userStats.getSnapshot().totalWebConnections,
+        active: statsSnapshot.webClients,
+        total: statsSnapshot.totalWebConnections,
         uniqueIPCount: webClientsList.length,
         clients: webClientsList
       },
       cameraClients: {
-        active: userStats.getSnapshot().cameraClients,
-        total: userStats.getSnapshot().totalCameraConnections,
+        active: statsSnapshot.cameraClients,
+        total: statsSnapshot.totalCameraConnections,
         uniqueIPCount: cameraClientsList.length,
         clients: cameraClientsList
       },

@@ -3,9 +3,11 @@ const {
   MACHINE_STATUS_LABELS,
 } = require('../utils/status-codes');
 
+const PRINTING_RECOVERY = MACHINE_STATUS.PRINTING_RECOVERY;
+
 function mapStatusIntToLabel(statusInt) {
   if ([18, 19, 21].includes(statusInt)) return 'LOADING';
-  if (statusInt === MACHINE_STATUS.PRINTING_RECOVERY) return 'PRINTING';
+  if (statusInt === PRINTING_RECOVERY) return 'PRINTING';
   if (MACHINE_STATUS_LABELS[statusInt]) return MACHINE_STATUS_LABELS[statusInt];
   return null;
 }
