@@ -5,7 +5,7 @@ const {
 } = require('../utils/status-codes');
 
 const PRINTING_RECOVERY = MACHINE_STATUS.PRINTING_RECOVERY;
-const JOB_PRINTING_RECOVERY = JOB_STATUS.PRINTING_RECOVERY ?? 13;
+const JOB_PRINTING_RECOVERY = JOB_STATUS.PRINTING_RECOVERY;
 
 function mapStatusIntToLabel(statusInt) {
   if ([18, 19, 21].includes(statusInt)) return 'LOADING';

@@ -1,3 +1,5 @@
+const isValidIP = (ip) => ip && ip !== 'unknown';
+
 class UserStats {
   constructor() {
     this.webClients = 0;
@@ -13,7 +15,7 @@ class UserStats {
   addWebClient(ip, userAgent = 'Unknown') {
     this.webClients += 1;
     this.totalWebConnections += 1;
-    if (ip && ip !== 'unknown') {
+    if (isValidIP(ip)) {
       const count = this.webIPCounts.get(ip) || 0;
       this.webIPCounts.set(ip, count + 1);
       this.webClientAgents.set(ip, userAgent);
@@ -22,7 +24,7 @@ class UserStats {
 
   removeWebClient(ip) {
     this.webClients = Math.max(0, this.webClients - 1);
-    if (!ip || ip === 'unknown') return;
+    if (!isValidIP(ip)) return;
     const count = this.webIPCounts.get(ip) || 0;
     if (count <= 1) {
       this.webIPCounts.delete(ip);
@@ -35,7 +37,7 @@ class UserStats {
   addCameraClient(ip, userAgent = 'Unknown') {
     this.cameraClients += 1;
     this.totalCameraConnections += 1;
-    if (ip && ip !== 'unknown') {
+    if (isValidIP(ip)) {
       const count = this.cameraIPCounts.get(ip) || 0;
       this.cameraIPCounts.set(ip, count + 1);
       this.cameraClientAgents.set(ip, userAgent);
@@ -44,7 +46,7 @@ class UserStats {
 
   removeCameraClient(ip) {
     this.cameraClients = Math.max(0, this.cameraClients - 1);
-    if (!ip || ip === 'unknown') return;
+    if (!isValidIP(ip)) return;
     const count = this.cameraIPCounts.get(ip) || 0;
     if (count <= 1) {
       this.cameraIPCounts.delete(ip);
