@@ -1,4 +1,6 @@
 
+require('module-alias/register');
+
 const DEBUG_DISABLE_LOCAL_IP_FILTER =
   !('DEBUG_DISABLE_LOCAL_IP_FILTER' in process.env) ||
   process.env.DEBUG_DISABLE_LOCAL_IP_FILTER === '' ||
@@ -6,24 +8,13 @@ const DEBUG_DISABLE_LOCAL_IP_FILTER =
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
-const path = require('path');
+require('utils/logger');
+const { getClientIP, isLocalIP } = require('utils/ip-utils');
+const { parseStatusPayload } = require('utils/status-utils');
+const UserStats = require('utils/user-stats');
 
-const PrinterDiscovery = require('./utils/printer-discovery');
-const SDCPClient = require('./utils/sdcp-client');
-const {
-  MACHINE_STATUS,
-  MACHINE_STATUS_LABELS,
-  JOB_STATUS,
-  JOB_STATUS_LABELS
-} = require('./utils/status-codes');
-
-// Map status int to label with special rules
-function mapStatusIntToLabel(statusInt) {
-  if ([18, 19, 21].includes(statusInt)) return 'LOADING';
-  if (statusInt === MACHINE_STATUS.PRINTING_RECOVERY) return 'PRINTING';
-  if (MACHINE_STATUS_LABELS[statusInt]) return MACHINE_STATUS_LABELS[statusInt];
-  return null;
-}
+const PrinterDiscovery = require('utils/printer-discovery');
+const SDCPClient = require('utils/sdcp-client');
 
 const app = express();
 const server = http.createServer(app);
@@ -100,66 +91,13 @@ const cameraSubscribers = new Set(); // Clients subscribed to camera stream
 let latestFrame = null;
 const cameraContentType = 'image/jpeg';
 
-// User counters and tracking
-const userStats = {
-  webClients: 0,
-  cameraClients: 0,
-  totalWebConnections: 0,
-  totalCameraConnections: 0
-};
-const webClientIPs = new Set();
-const cameraClientIPs = new Set();
-const webClientAgents = new Map(); // IP -> user agent
-const cameraClientAgents = new Map(); // IP -> user agent
+const userStats = new UserStats();
 
-function normalizeIP(ip) {
-  if (!ip) return 'unknown';
-  // Remove IPv6 prefix for IPv4-mapped addresses
-  if (ip.startsWith('::ffff:')) {
-    ip = ip.substring(7);
-  }
-  return ip;
-}
-
-function isLocal192(ip) {
-  return /^192\.168\./.test(ip);
-}
-
-function isLocalIP(ip) {
-  if (!ip || ip === 'unknown') return false;
-  return ip === '127.0.0.1' || ip === '::1' || ip === 'localhost' || isLocal192(ip);
-}
-
-function pickForwardedIP(headerValue) {
-  if (!headerValue) return null;
-  const parts = headerValue.split(',').map(p => normalizeIP(p.trim())).filter(Boolean);
-  for (const ip of parts) {
-    if (!isLocal192(ip)) return ip;
-  }
-  return parts[0] || null;
-}
-
-function getClientIP(req, socket) {
-  // Prefer x-forwarded-for chain
-  const xfwd = pickForwardedIP(req?.headers?.['x-forwarded-for']);
-  if (xfwd && (DEBUG_DISABLE_LOCAL_IP_FILTER || !isLocal192(xfwd))) return xfwd;
-
-  // Cloudflare headers
-  const cfip = normalizeIP(req?.headers?.['cf-connecting-ip']);
-  if (cfip && cfip !== 'unknown' && (DEBUG_DISABLE_LOCAL_IP_FILTER || !isLocal192(cfip))) return cfip;
-
-  const cfipv6 = normalizeIP(req?.headers?.['cf-connecting-ipv6']);
-  if (cfipv6 && cfipv6 !== 'unknown' && (DEBUG_DISABLE_LOCAL_IP_FILTER || !isLocal192(cfipv6))) return cfipv6;
-
-  // Fallback to remote address if not local 192.168.x.x
-  const remote = normalizeIP(socket?.remoteAddress || req?.socket?.remoteAddress);
-  if (remote && remote !== 'unknown' && (DEBUG_DISABLE_LOCAL_IP_FILTER || !isLocal192(remote))) return remote;
-
-  return 'unknown';
-}
+const resolveClientIP = (req, socket) =>
+  getClientIP(req, socket, DEBUG_DISABLE_LOCAL_IP_FILTER);
 
 function updateUserStatsAndBroadcast() {
-  printerStatus.users = getUserStats();
+  printerStatus.users = userStats.getSnapshot();
   // Notify connected web clients of updated stats
   broadcastToClients({ type: 'status', data: buildStatusPayload() });
 }
@@ -181,38 +119,11 @@ function setDisconnectedStatus() {
   broadcastToClients({ type: 'status', data: buildStatusPayload() });
 }
 
-function getUserStats() {
-  // Calculate unique active IPs for currently connected clients
-  const activeWebIPs = new Set();
-  webClients.forEach((ws) => {
-    if (ws.readyState === WebSocket.OPEN && ws._clientIP && ws._clientIP !== 'unknown') {
-      activeWebIPs.add(ws._clientIP);
-    }
-  });
-
-  // For camera, we don't have a direct set of active connections, so count IPs from cameraSubscribers
-  const activeCameraIPs = new Set();
-  cameraSubscribers.forEach((subscriber) => {
-    // We don't store IP per subscriber, so this will be empty unless you refactor cameraSubscribers to store IPs
-    // For now, fallback to cameraClientIPs, but ideally, refactor to track active camera IPs
-  });
-
-  return {
-    webClients: userStats.webClients,
-    cameraClients: userStats.cameraClients,
-    totalWebConnections: userStats.totalWebConnections,
-    totalCameraConnections: userStats.totalCameraConnections,
-    activeUniqueWebIPs: activeWebIPs.size,
-    activeUniqueCameraIPs: userStats.cameraClients // fallback: number of active camera clients
-  };
-}
-
 function buildStatusPayload() {
-  // Keep printerStatus.users for backward compatibility
-  printerStatus.users = printerStatus.users || getUserStats();
+  printerStatus.users = printerStatus.users || userStats.getSnapshot();
   return {
     printer: printerStatus,
-    users: getUserStats()
+    users: userStats.getSnapshot()
   };
 }
 
@@ -222,7 +133,7 @@ app.use(express.static('public'));
 // API endpoint to get current printer status
 app.get('/api/status', (req, res) => {
   // Ensure latest user stats are present
-  printerStatus.users = getUserStats();
+  printerStatus.users = userStats.getSnapshot();
   res.json(buildStatusPayload());
 });
 
@@ -262,22 +173,18 @@ app.get('/api/camera', async (req, res) => {
   }
 
   // Track IP and counters
+  let cameraClientIP = 'unknown';
   try {
-    const ip = getClientIP(req, req.socket);
-    if (ip !== 'unknown') {
-      cameraClientIPs.add(ip);
-      const userAgent = req.headers['user-agent'] || 'Unknown';
-      cameraClientAgents.set(ip, userAgent);
-    }
+    cameraClientIP = resolveClientIP(req, req.socket);
+    const userAgent = req.headers['user-agent'] || 'Unknown';
+    userStats.addCameraClient(cameraClientIP, userAgent);
   } catch (_) {}
-  userStats.cameraClients += 1;
-  userStats.totalCameraConnections += 1;
   updateUserStatsAndBroadcast();
 
   // Handle client disconnect
   const cleanup = () => {
     cameraSubscribers.delete(subscriber);
-    userStats.cameraClients = Math.max(0, userStats.cameraClients - 1);
+    userStats.removeCameraClient(cameraClientIP);
     updateUserStatsAndBroadcast();
   };
 
@@ -286,6 +193,7 @@ app.get('/api/camera', async (req, res) => {
   res.on('error', cleanup);
 });
 
+// API endpoint to serve H.264 transcoded camera stream
 // API endpoint to connect to a specific printer
 app.post('/api/connect/:ip', express.json(), async (req, res) => {
   try {
@@ -299,7 +207,7 @@ app.post('/api/connect/:ip', express.json(), async (req, res) => {
 
 // Admin endpoint - only accessible from local addresses
 app.get('/api/admin', (req, res) => {
-  const clientIP = getClientIP(req, req.socket);
+  const clientIP = resolveClientIP(req, req.socket);
   
   // Verify client is local
   if (!isLocalIP(clientIP) && clientIP !== '212.229.84.209') {
@@ -307,16 +215,8 @@ app.get('/api/admin', (req, res) => {
     return res.status(404).type('text/html').send('<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<title>Error</title>\n</head>\n<body>\n<pre>Cannot GET /api/admin</pre>\n</body>\n</html>\n');
   }
 
-  // Build client lists with user agents
-  const webClientsList = Array.from(webClientIPs).map(ip => ({
-    ip,
-    userAgent: webClientAgents.get(ip) || 'Unknown'
-  }));
-
-  const cameraClientsList = Array.from(cameraClientIPs).map(ip => ({
-    ip,
-    userAgent: cameraClientAgents.get(ip) || 'Unknown'
-  }));
+  const statsSnapshot = userStats.getSnapshot();
+  const { webClients: webClientsList, cameraClients: cameraClientsList } = userStats.getClientLists();
 
   res.json({
     success: true,
@@ -324,15 +224,15 @@ app.get('/api/admin', (req, res) => {
       accessIP: clientIP,
       timestamp: new Date().toISOString(),
       webClients: {
-        active: userStats.webClients,
-        total: userStats.totalWebConnections,
-        uniqueIPCount: webClientIPs.size,
+        active: statsSnapshot.webClients,
+        total: statsSnapshot.totalWebConnections,
+        uniqueIPCount: webClientsList.length,
         clients: webClientsList
       },
       cameraClients: {
-        active: userStats.cameraClients,
-        total: userStats.totalCameraConnections,
-        uniqueIPCount: cameraClientIPs.size,
+        active: statsSnapshot.cameraClients,
+        total: statsSnapshot.totalCameraConnections,
+        uniqueIPCount: cameraClientsList.length,
         clients: cameraClientsList
       },
       printer: {
@@ -348,22 +248,15 @@ app.get('/api/admin', (req, res) => {
 
 // WebSocket connection handler for web clients
 wss.on('connection', (ws, req) => {
-  const ip = getClientIP(req, ws._socket);
+  const ip = resolveClientIP(req, ws._socket);
   const userAgent = req.headers['user-agent'] || 'Unknown';
   console.log(`[WebSocket] Client connected: IP=${ip}`);
   webClients.add(ws);
   // Track IP and counters
   try {
-    const ip = getClientIP(req, ws._socket);
     ws._clientIP = ip; // Store IP on WebSocket instance
-    if (ip !== 'unknown') {
-      webClientIPs.add(ip);
-      const userAgent = req.headers['user-agent'] || 'Unknown';
-      webClientAgents.set(ip, userAgent);
-    }
+    userStats.addWebClient(ip, userAgent);
   } catch (_) {}
-  userStats.webClients += 1;
-  userStats.totalWebConnections += 1;
   updateUserStatsAndBroadcast();
 
   // Send current status
@@ -372,7 +265,7 @@ wss.on('connection', (ws, req) => {
   const cleanup = () => {
     console.log('Web client disconnected');
     webClients.delete(ws);
-    userStats.webClients = Math.max(0, userStats.webClients - 1);
+    userStats.removeWebClient(ip);
     updateUserStatsAndBroadcast();
   };
 
@@ -422,22 +315,6 @@ function broadcastToClients(message) {
  * Update printer status from SDCP data
  */
 let isFirstUpdate = true;
-
-function parseStatusPayload(data) {
-  // Returns { status, status_code }
-  const statusBlock = data?.Status || {};
-  let currentStatus = statusBlock.CurrentStatus;
-  if (typeof currentStatus === 'number') currentStatus = [currentStatus];
-  let statusCode = Array.isArray(currentStatus) && currentStatus.length ? currentStatus[0] : null;
-  let status = mapStatusIntToLabel(statusCode) || 'UNKNOWN';
-  // If PrintInfo.Status is PRINTING (13), override with PRINTING for user clarity
-  const jobStatusCode = statusBlock.PrintInfo?.Status ?? null;
-  if (jobStatusCode === 13) {
-    status = 'PRINTING';
-    statusCode = 13;
-  }
-  return { status, status_code: statusCode };
-}
 
 function updatePrinterStatus(data) {
   if (!data) {

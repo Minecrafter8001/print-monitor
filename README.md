@@ -176,12 +176,37 @@ elegoo-print-monitor/
 ├── server.js              # Main server and WebSocket handler
 ├── printer-discovery.js   # UDP discovery module
 ├── sdcp-client.js        # SDCP WebSocket client
+├── src/                  # Shared helpers (status parsing, IP utils, user stats, camera transcoder)
 ├── package.json          # Dependencies and scripts
 └── public/               # Web interface files
     ├── index.html        # Main HTML page
     ├── style.css         # Styling
     └── app.js            # Client-side JavaScript
+└── utils/
+    └── mjpeg-test-server.js # MJPEG generator for local testing
 ```
+
+### Testing
+
+Run unit tests with:
+
+```bash
+npm test
+```
+
+### H.264 camera stream
+- MJPEG camera stream: `GET /api/camera`
+- H.264 (MP4 container) stream: `GET /api/camera/h264`
+
+### MJPEG test generator
+
+Start a local MJPEG test source with a timestamped pattern:
+
+```bash
+node utils/mjpeg-test-server.js
+```
+
+Default URL: `http://localhost:4000/mjpeg`
 
 ### Dependencies
 
