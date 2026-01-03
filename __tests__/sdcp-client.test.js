@@ -1,4 +1,4 @@
-const SDCPClient = require('../utils/sdcp-client');
+const SDCPClient = require('utils/sdcp-client');
 
 describe('SDCPClient', () => {
   test('sendCommand rejects when not connected', async () => {

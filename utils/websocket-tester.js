@@ -1,10 +1,10 @@
 
 // --- Simplified: One-shot status monitor matching server logic ---
 
-const SDCPClient = require('./sdcp-client');
-const PrinterDiscovery = require('./printer-discovery');
+const SDCPClient = require('utils/sdcp-client');
+const PrinterDiscovery = require('utils/printer-discovery');
 const readline = require('readline');
-const { MACHINE_STATUS_LABELS, JOB_STATUS_LABELS } = require('./status-codes');
+const { MACHINE_STATUS_LABELS, JOB_STATUS_LABELS } = require('utils/status-codes');
 
 function parseStatusPayload(data) {
     // Matches server.js logic exactly

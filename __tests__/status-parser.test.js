@@ -3,7 +3,7 @@ const assert = require('assert');
 const {
   MACHINE_STATUS_LABELS,
   JOB_STATUS_LABELS
-} = require('./status-codes');
+} = require('utils/status-codes');
 
 // Import the parser logic from server.js (simulate here)
 function parseStatusPayload(data) {
@@ -96,14 +96,20 @@ const tests = [
   }
 ];
 
-tests.forEach(({ name, payload, expect }) => {
-  const { machine_status, job_status } = parseStatusPayload(payload.Data);
-  try {
-    assert.strictEqual(machine_status, expect.machine_status, `${name}: machine_status`);
-    assert.strictEqual(job_status, expect.job_status, `${name}: job_status`);
-    console.log(`PASS: ${name}`);
-  } catch (err) {
-    console.error(`FAIL: ${name}`);
-    console.error(err.message);
-  }
+tests.forEach(({ name, payload, expect: expectedResults }) => {
+  test(name, () => {
+    const { machine_status, job_status } = parseStatusPayload(payload.Data);
+    expect(machine_status).toBe(expectedResults.machine_status);
+    expect(job_status).toBe(expectedResults.job_status);
+  });
+});
+
+describe('parseStatusPayload', () => {
+  tests.forEach(({ name, payload, expect: expectedResults }) => {
+    test(name, () => {
+      const { machine_status, job_status } = parseStatusPayload(payload.Data);
+      expect(machine_status).toBe(expectedResults.machine_status);
+      expect(job_status).toBe(expectedResults.job_status);
+    });
+  });
 });

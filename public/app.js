@@ -6,6 +6,7 @@ let snapshotTaken = false;
 let lastPrinterState = null;
 let frozenETA = null;
 let frozenETAState = null;
+let lastPayload = null;
 
 // Settings object
 const defaultSettings = {
@@ -77,6 +78,7 @@ function connectWebSocket() {
         try {
             const message = JSON.parse(event.data);
             if (message.type === 'status') {
+                lastPayload = message.data;
                 updateUI(message.data);
             }
         } catch (err) {
@@ -192,23 +194,25 @@ function updateUI(payload) {
     // Freeze ETA when progress is 100 and state is NOT PRINTING; unfreeze when state is PRINTING
     const etaElem = document.getElementById('ReportedETA');
     const statusUpper = (printer.status || '').toUpperCase();
+
+    // Helper to get stable ETA based on last update time
+    const getStableETA = () => {
+        if (printer.remainingTime && Number.isFinite(printer.remainingTime)) {
+            const baseTime = printer.lastUpdate ? new Date(printer.lastUpdate).getTime() : Date.now();
+            return formatClockTime(new Date(baseTime + printer.remainingTime * 1000));
+        }
+        return '-';
+    };
+
     if (statusUpper === 'PRINTING') {
         // Unfreeze ETA when printing
-        if (printer.remainingTime && Number.isFinite(printer.remainingTime)) {
-            etaElem.textContent = formatClockTime(new Date(Date.now() + printer.remainingTime * 1000));
-        } else {
-            etaElem.textContent = '-';
-        }
+        etaElem.textContent = getStableETA();
         frozenETA = null;
         frozenETAState = null;
     } else if (progress >= 100) {
         if (!frozenETA) {
             // Only freeze if not already frozen
-            if (printer.remainingTime && Number.isFinite(printer.remainingTime)) {
-                frozenETA = formatClockTime(new Date(Date.now() + printer.remainingTime * 1000));
-            } else {
-                frozenETA = '-';
-            }
+            frozenETA = getStableETA();
             frozenETAState = statusUpper;
         }
         etaElem.textContent = frozenETA;
@@ -217,11 +221,7 @@ function updateUI(payload) {
         etaElem.textContent = frozenETA;
     } else {
         // Default ETA logic
-        if (printer.remainingTime && Number.isFinite(printer.remainingTime)) {
-            etaElem.textContent = formatClockTime(new Date(Date.now() + printer.remainingTime * 1000));
-        } else {
-            etaElem.textContent = '-';
-        }
+        etaElem.textContent = getStableETA();
         frozenETA = null;
         frozenETAState = null;
     }
@@ -281,8 +281,11 @@ function updateUI(payload) {
         if (isIdle && settings.pauseOnIdle) {
             cameraOverlay.style.display = 'flex';
         } else {
-            snapshotTaken = false;
-            cameraFeed.src = '/api/camera';
+            // Only reset src if we have a snapshot taken or if it's not set to the stream
+            if (snapshotTaken || !cameraFeed.src.includes('/api/camera')) {
+                snapshotTaken = false;
+                cameraFeed.src = '/api/camera';
+            }
             cameraOverlay.style.display = 'none';
         }
         cameraFeed.style.display = 'block';
@@ -348,4 +351,9 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('Elegoo Print Monitor starting...');
     initPauseOnIdleButton();
     connectWebSocket();
+
+    // Update UI every second to keep clock and other elements fresh
+    setInterval(() => {
+        updateUI(lastPayload);
+    }, 1000);
 });

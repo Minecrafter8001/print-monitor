@@ -1,4 +1,6 @@
 
+require('module-alias/register');
+
 const DEBUG_DISABLE_LOCAL_IP_FILTER =
   !('DEBUG_DISABLE_LOCAL_IP_FILTER' in process.env) ||
   process.env.DEBUG_DISABLE_LOCAL_IP_FILTER === '' ||
@@ -6,13 +8,13 @@ const DEBUG_DISABLE_LOCAL_IP_FILTER =
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
-require('./utils/logger');
-const { getClientIP, isLocalIP } = require('./utils/ip-utils');
-const { parseStatusPayload } = require('./utils/status-utils');
-const UserStats = require('./utils/user-stats');
+require('utils/logger');
+const { getClientIP, isLocalIP } = require('utils/ip-utils');
+const { parseStatusPayload } = require('utils/status-utils');
+const UserStats = require('utils/user-stats');
 
-const PrinterDiscovery = require('./utils/printer-discovery');
-const SDCPClient = require('./utils/sdcp-client');
+const PrinterDiscovery = require('utils/printer-discovery');
+const SDCPClient = require('utils/sdcp-client');
 
 const app = express();
 const server = http.createServer(app);

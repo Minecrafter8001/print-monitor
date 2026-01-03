@@ -2,7 +2,7 @@ const {
   MACHINE_STATUS,
   MACHINE_STATUS_LABELS,
   JOB_STATUS
-} = require('./status-codes');
+} = require('utils/status-codes');
 
 function mapStatusIntToLabel(statusInt) {
   if ([18, 19, 21].includes(statusInt)) return 'LOADING';

@@ -1,4 +1,4 @@
-const UserStats = require('../utils/user-stats');
+const UserStats = require('utils/user-stats');
 
 describe('UserStats', () => {
   test('tracks web client counts and unique IPs', () => {
