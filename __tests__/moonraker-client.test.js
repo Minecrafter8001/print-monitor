@@ -86,4 +86,39 @@ describe('MoonrakerClient', () => {
 
     await expect(client.getPrinterName()).resolves.toBe('lava');
   });
+
+  test('terminates an unresponsive Moonraker socket so it can reconnect', () => {
+    jest.useFakeTimers();
+    const client = new MoonrakerClient('127.0.0.1', { heartbeatInterval: 1000 });
+    client.ws = {
+      readyState: WebSocket.OPEN,
+      ping: jest.fn(),
+      terminate: jest.fn()
+    };
+
+    client.startHeartbeat();
+    jest.advanceTimersByTime(1000);
+    expect(client.ws.ping).toHaveBeenCalledTimes(1);
+
+    jest.advanceTimersByTime(1000);
+    expect(client.ws.terminate).toHaveBeenCalledTimes(1);
+    client.stopHeartbeat();
+    jest.useRealTimers();
+  });
+
+  test('refreshes subscriptions when Klipper becomes ready again', async () => {
+    const client = new MoonrakerClient('127.0.0.1');
+    client.refreshPrinterState = jest.fn().mockResolvedValue();
+    const reconnected = jest.fn();
+    client.on('reconnected', reconnected);
+
+    client.handleMessage(Buffer.from(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'notify_klippy_ready'
+    })));
+    await Promise.resolve();
+
+    expect(client.refreshPrinterState).toHaveBeenCalledTimes(1);
+    expect(reconnected).toHaveBeenCalledTimes(1);
+  });
 });

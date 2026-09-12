@@ -28,6 +28,9 @@ class MoonrakerClient extends EventEmitter {
     this.messageHandlers = new Map();
     this.reconnectTimer = null;
     this.manualDisconnect = false;
+    this.heartbeatTimer = null;
+    this.awaitingPong = false;
+    this.heartbeatInterval = options.heartbeatInterval || 15000;
   }
 
   connect() {
@@ -38,12 +41,13 @@ class MoonrakerClient extends EventEmitter {
       wsURL.protocol = protocol;
 
       console.log(`Connecting to Moonraker at ${wsURL.origin}`);
-      this.ws = new WebSocket(wsURL);
+      this.ws = new WebSocket(wsURL, { handshakeTimeout: 10000 });
       let opened = false;
 
       this.ws.on('open', async () => {
         opened = true;
         this.connected = true;
+        this.startHeartbeat();
         try {
           if (this.apiKey) {
             await this.sendRequest('server.connection.identify', {
@@ -54,12 +58,7 @@ class MoonrakerClient extends EventEmitter {
               api_key: this.apiKey
             });
           }
-          const objectResult = await this.sendRequest('printer.objects.list');
-          this.availableObjects = objectResult.objects || [];
-          const result = await this.sendRequest('printer.objects.subscribe', {
-            objects: this.buildSubscription(this.availableObjects)
-          });
-          this.mergeStatus(result.status || {});
+          await this.refreshPrinterState();
           resolve();
         } catch (err) {
           reject(err);
@@ -68,11 +67,15 @@ class MoonrakerClient extends EventEmitter {
       });
 
       this.ws.on('message', (data) => this.handleMessage(data));
+      this.ws.on('pong', () => {
+        this.awaitingPong = false;
+      });
       this.ws.on('error', (err) => {
         this.emit('error', err);
         if (!opened) reject(err);
       });
       this.ws.on('close', () => {
+        this.stopHeartbeat();
         this.connected = false;
         this.rejectPendingRequests(new Error('Moonraker connection closed'));
         this.emit('disconnect');
@@ -101,6 +104,10 @@ class MoonrakerClient extends EventEmitter {
         this.mergeStatus(message.params?.[0] || {});
       } else if (message.method === 'notify_klippy_disconnected') {
         this.emit('klippy-disconnected');
+      } else if (message.method === 'notify_klippy_ready') {
+        this.refreshPrinterState()
+          .then(() => this.emit('reconnected'))
+          .catch((err) => console.error('Failed to refresh Klipper state:', err.message));
       }
     } catch (err) {
       console.error('Failed to parse Moonraker message:', err.message);
@@ -141,6 +148,16 @@ class MoonrakerClient extends EventEmitter {
 
   onStatus(callback) {
     this.statusCallback = callback;
+  }
+
+  async refreshPrinterState() {
+    const objectResult = await this.sendRequest('printer.objects.list');
+    this.availableObjects = objectResult.objects || [];
+    const result = await this.sendRequest('printer.objects.subscribe', {
+      objects: this.buildSubscription(this.availableObjects)
+    });
+    this.objectState = {};
+    this.mergeStatus(result.status || {});
   }
 
   buildSubscription(availableObjects) {
@@ -191,6 +208,30 @@ class MoonrakerClient extends EventEmitter {
     return new URL(pathOrURL, this.baseURL).toString();
   }
 
+  startHeartbeat() {
+    this.stopHeartbeat();
+    this.awaitingPong = false;
+    this.heartbeatTimer = setInterval(() => {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+      if (this.awaitingPong) {
+        console.warn('Moonraker heartbeat timed out; reconnecting');
+        this.ws.terminate();
+        return;
+      }
+      this.awaitingPong = true;
+      this.ws.ping();
+    }, this.heartbeatInterval);
+    this.heartbeatTimer.unref?.();
+  }
+
+  stopHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+    this.awaitingPong = false;
+  }
+
   scheduleReconnect() {
     if (this.reconnectTimer) return;
     this.reconnectTimer = setTimeout(async () => {
@@ -215,6 +256,7 @@ class MoonrakerClient extends EventEmitter {
 
   disconnect() {
     this.manualDisconnect = true;
+    this.stopHeartbeat();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
