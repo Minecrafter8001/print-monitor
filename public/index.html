@@ -31,12 +31,12 @@
                         <span class="value" id="printerName">-</span>
                     </div>
                     <div class="status-item">
-                        <span class="label">Machine State:</span>
-                        <span class="value state" id="machineState">-</span>
+                        <span class="label">Klipper State:</span>
+                        <span class="value state" id="klipperState">-</span>
                     </div>
                     <div class="status-item">
-                        <span class="label">Job State:</span>
-                        <span class="value state" id="jobState">-</span>
+                        <span class="label">Print State:</span>
+                        <span class="value state" id="printState">-</span>
                     </div>
 
                     <div class="status-item">
@@ -94,7 +94,7 @@
                     <div class="temp-item">
                         <div class="temp-icon">N</div>
                         <div class="temp-info">
-                            <div class="temp-label">Nozzle</div>
+                            <div class="temp-label" id="activeToolLabel">Nozzle</div>
                             <div class="temp-value">
                                 <span id="nozzleTemp">0</span>°C / 
                                 <span id="nozzleTarget">0</span>°C
@@ -149,7 +149,7 @@
         </div>
 
         <footer>
-            <p>Print Monitor | Real-time monitoring via SDCP</p>
+            <p>Print Monitor | Real-time monitoring via Moonraker</p>
         </footer>
     </div>
 

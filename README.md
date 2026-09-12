@@ -1,232 +1,62 @@
-# Elegoo Print Monitor
+# Snapmaker Moonraker Print Monitor
 
-A Node.js web server that provides real-time monitoring of Elegoo 3D printers, specifically the Elegoo Centauri Carbon, with live status updates and camera feed streaming.
+A Node.js dashboard for a Snapmaker or other Klipper printer with Moonraker. It subscribes to Moonraker printer objects, relays status to browsers over WebSocket, and proxies an MJPEG webcam stream.
 
-## Features
+## Requirements
 
-- 🔍 **Auto-Discovery**: Automatically discovers Elegoo printers on the local network using UDP broadcast
-- 📊 **Real-Time Status**: Live monitoring of printer state, print progress, and temperatures
-- 📹 **Camera Feed**: Live video streaming from the printer's camera (if available)
-- 🌐 **Web Interface**: Clean, responsive web interface accessible from any browser
-- 🔄 **Auto-Reconnect**: Automatically reconnects to the printer if connection is lost
-- 📡 **WebSocket Updates**: Real-time updates pushed to the browser via WebSocket
+- Node.js 18 or newer
+- A printer running Klipper with Moonraker available over the network
+- An MJPEG webcam configured in Moonraker, if camera support is desired
 
-## Supported Printers
+Stock Snapmaker firmware does not necessarily expose Moonraker. Confirm that `http://PRINTER:7125/server/info` responds before configuring this monitor.
 
-- Elegoo Centauri Carbon (via SDCP protocol)
-- Other Elegoo printers using the SDCP protocol
+## Setup
 
-## Installation
+```powershell
+npm install
+$env:MOONRAKER_URL = 'http://192.168.1.100:7125'
+npm start
+```
 
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/Minecrafter8001/elegoo-print-monitor.git
-   cd elegoo-print-monitor
-   ```
-
-2. **Install dependencies**:
-   ```bash
-   npm install
-   ```
-
-## Usage
-
-1. **Start the server**:
-   ```bash
-   npm start
-   ```
-
-2. **Access the web interface**:
-   Open your browser and navigate to:
-   ```
-   http://localhost:3000
-   ```
-
-3. **Monitor your printer**:
-   - The server will automatically discover and connect to Elegoo printers on your local network
-   - View real-time status, temperatures, print progress, and camera feed
-   - The interface updates automatically as the printer status changes
+Open `http://localhost:3000`.
 
 ## Configuration
 
-### Environment Variables
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `MOONRAKER_URL` | none | Required Moonraker base URL |
+| `MOONRAKER_API_KEY` | none | API key used by `server.connection.identify` |
+| `CAMERA_STREAM_URL` | Moonraker webcam entry | Optional absolute or Moonraker-relative MJPEG URL override |
+| `PORT` | `3000` | Dashboard HTTP port |
+| `WS_UPDATE_INTERVAL` | `1000` | Minimum browser status broadcast interval in milliseconds |
+| `DEBUG_DISABLE_LOCAL_IP_FILTER` | `true` | Disables local-IP filtering when true |
+| `ENABLE_DEBUG_ENDPOINTS` | `false` | Enables the local-only restart endpoint |
 
-- `PORT`: Server port (default: 3000)
-  ```bash
-  PORT=8080 npm start
-  ```
+For PM2, provide the variables in the shell before loading [ecosystem.config.js](ecosystem.config.js).
 
-### Custom Printer IP
+## Moonraker Data
 
-If auto-discovery doesn't work, you can manually connect to a printer using the API:
+The dashboard name uses Fluidd's `uiSettings.general.instanceName` database setting. If it is unavailable or blank, the monitor falls back to the hostname returned by `printer.info`.
 
-```bash
-curl -X POST http://localhost:3000/api/connect/192.168.1.100
-```
+The client first calls `printer.objects.list`, then subscribes to core status objects, every available `extruder*`, and all temperature sensors. This supports Snapmaker multi-tool systems and custom names such as `temperature_sensor cavity` without hardcoded tool numbers.
 
-## API Endpoints
+Partial `notify_status_update` messages are merged into a cached object state. File metadata is loaded through `server.files.metadata` when the active filename changes. Remaining time is therefore a slicer metadata estimate, not a value reported directly by Klipper.
 
-### GET /api/status
-Returns current printer status as JSON.
+Webcams are loaded through `server.webcams.list`. Relative stream URLs are resolved against `MOONRAKER_URL`; use `CAMERA_STREAM_URL` when the camera is exposed through a different reverse-proxy host or port.
 
-**Response**:
-```json
-{
-  "connected": true,
-  "printerName": "Elegoo Printer",
-  "state": "Printing",
-  "progress": 45,
-  "temperatures": {
-    "bed": { "current": 60, "target": 60 },
-    "nozzle": { "current": 210, "target": 210 }
-  },
-  "currentFile": "model.gcode",
-  "printTime": 1234,
-  "remainingTime": 5678,
-  "cameraURL": "http://192.168.1.100:8080/stream",
-  "lastUpdate": "2025-12-25T17:27:35.270Z"
-}
-```
+## API
 
-### GET /api/discover
-Discovers printers on the network.
+- `GET /api/status`: current `{ printer, users }` snapshot
+- `GET /api/camera`: relayed MJPEG stream
+- `GET /api/admin`: local-only connection statistics
+- WebSocket `/`: `type: "status"` notifications
 
-**Response**:
-```json
-{
-  "success": true,
-  "printers": [
-    {
-      "address": "192.168.1.100",
-      "Name": "Elegoo Printer",
-      "Id": "ABC123"
-    }
-  ]
-}
-```
-
-### POST /api/connect/:ip
-Connects to a specific printer by IP address.
-
-**Example**:
-```bash
-curl -X POST http://localhost:3000/api/connect/192.168.1.100
-```
-
-## Technical Details
-
-### SDCP Protocol
-
-The Elegoo Centauri Carbon uses the SDCP (Smart Device Communication Protocol) for network communication:
-
-- **Discovery**: UDP broadcast on port 3000 with message "M99999"
-- **Connection**: WebSocket connection to `ws://PRINTER_IP:3030/websocket`
-- **Communication**: JSON-formatted messages with command IDs
-
-### Key Commands
-
-- `Cmd: 0` - Request printer status
-- `Cmd: 1` - Request printer attributes
-- `Cmd: 386` - Request camera stream URL
-
-### Architecture
-
-```
-┌─────────────┐         ┌──────────────┐         ┌─────────────┐
-│   Browser   │◄───────►│  Web Server  │◄───────►│   Printer   │
-│             │ WebSocket│  (Node.js)   │ WebSocket│  (SDCP)     │
-│   (UI)      │         │              │         │             │
-└─────────────┘         └──────────────┘         └─────────────┘
-                              │
-                              │ UDP Broadcast
-                              ▼
-                        Discovery (Port 3000)
-```
-
-## Network Requirements
-
-- Printer and server must be on the same local network
-- UDP port 3000 must be accessible for discovery
-- TCP port 3030 on the printer for WebSocket connection
-- No authentication required (local network communication)
-
-## Troubleshooting
-
-### Printer not discovered
-- Ensure the printer is powered on and connected to the same network
-- Check that UDP port 3000 is not blocked by firewall
-- Try manually connecting using the IP address via `/api/connect/:ip`
-
-### Camera feed not showing
-- Some printers may not have camera support enabled
-- Check printer settings to ensure camera is enabled
-- Camera URL is requested via SDCP command 386
-
-### Connection lost
-- The server automatically attempts to reconnect every 5 seconds
-- Check network connectivity between server and printer
-- Restart the server if issues persist
+The printer object contains `connected`, `name`, `klipper`, `print`, `temperatures`, `camera`, and `updatedAt`.
 
 ## Development
 
-### Project Structure
-
-```
-elegoo-print-monitor/
-├── server.js              # Main server and WebSocket handler
-├── printer-discovery.js   # UDP discovery module
-├── sdcp-client.js        # SDCP WebSocket client
-├── src/                  # Shared helpers (status parsing, IP utils, user stats, camera transcoder)
-├── package.json          # Dependencies and scripts
-└── public/               # Web interface files
-    ├── index.html        # Main HTML page
-    ├── style.css         # Styling
-    └── app.js            # Client-side JavaScript
-└── utils/
-    └── mjpeg-test-server.js # MJPEG generator for local testing
-```
-
-### Testing
-
-Run unit tests with:
-
-```bash
+```powershell
 npm test
+node utils/websocket-tester.js http://192.168.1.100:7125
+node utils/moonraker-probe.js http://192.168.1.100:7125
 ```
-
-### H.264 camera stream
-- MJPEG camera stream: `GET /api/camera`
-- H.264 (MP4 container) stream: `GET /api/camera/h264`
-
-### MJPEG test generator
-
-Start a local MJPEG test source with a timestamped pattern:
-
-```bash
-node utils/mjpeg-test-server.js
-```
-
-Default URL: `http://localhost:4000/mjpeg`
-
-### Dependencies
-
-- **express**: Web server framework
-- **ws**: WebSocket library
-- **uuid**: UUID generation for SDCP messages
-
-## License
-
-MIT
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## Acknowledgments
-
-- Elegoo for the SDCP protocol documentation
-- Community projects like OpenCentauri for protocol insights
-
-## Support
-
-For issues and questions, please open an issue on GitHub.

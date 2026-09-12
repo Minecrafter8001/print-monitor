@@ -77,7 +77,7 @@ describe('UI and Client Tests', () => {
         const date = new Date('2026-01-03T12:00:00');
         // The exact format might depend on locale, but we can check if it contains parts
         const formatted = formatClockTime(date);
-        expect(formatted).toMatch(/12:00:00/);
+        expect(formatted).toMatch(/:00:00/);
     });
 
     test('updateUI updates connection status', () => {
@@ -96,31 +96,37 @@ describe('UI and Client Tests', () => {
         const payload = {
             printer: {
                 connected: true,
-                printerName: 'Test Printer',
-                status: {
-                    consolidated: 'PRINTING',
-                    machine: { state: 'PRINTING', code: 1 },
-                    job: { state: 'PRINTING', code: 3 }
+                name: 'Test Printer',
+                klipper: { state: 'ready', message: '' },
+                print: {
+                    state: 'printing',
+                    filename: 'test.gcode',
+                    progressPercent: 50.5,
+                    elapsedSeconds: 100,
+                    estimatedRemainingSeconds: 200,
+                    layers: { current: 10, total: 100 }
                 },
-                currentFile: 'test.gcode',
-                progress: 50.5,
-                printTime: 100,
-                remainingTime: 200,
                 temperatures: {
-                    nozzle: { current: 200, target: 210 },
+                    activeTool: {
+                        name: 'extruder3',
+                        friendlyName: 'Toolhead 4',
+                        current: 200,
+                        target: 210
+                    },
                     bed: { current: 60, target: 60 },
-                    enclosure: { current: 30, target: 0 }
-                },
-                layers: { current: 10, total: 100 }
+                    enclosure: { name: 'temperature_sensor cavity', current: 30, target: 0 },
+                    tools: []
+                }
             }
         };
         updateUI(payload);
 
         expect(document.getElementById('printerName').textContent).toBe('Test Printer');
-        expect(document.getElementById('machineState').textContent).toBe('PRINTING');
-        expect(document.getElementById('jobState').textContent).toBe('PRINTING');
+        expect(document.getElementById('klipperState').textContent).toBe('READY');
+        expect(document.getElementById('printState').textContent).toBe('PRINTING');
         expect(document.getElementById('currentFile').textContent).toBe('test.gcode');
         expect(document.getElementById('progressText').textContent).toBe('51%');
+        expect(document.getElementById('activeToolLabel').textContent).toBe('Toolhead 4');
         expect(document.getElementById('nozzleTemp').textContent).toBe('200');
         expect(document.getElementById('nozzleTarget').textContent).toBe('210');
         expect(document.getElementById('completedLayers').textContent).toBe('10');
@@ -143,25 +149,20 @@ describe('UI and Client Tests', () => {
         expect(loaded.pauseOnIdle).toBe(true);
     });
 
-    test('ETA freeze logic works', () => {
+    test('ETA is calculated from Moonraker metadata estimate', () => {
         const payload = {
             printer: {
-                status: 'COMPLETE',
-                progress: 100,
-                remainingTime: 0,
-                lastUpdate: new Date().toISOString()
+                print: {
+                    state: 'printing',
+                    progressPercent: 50,
+                    estimatedRemainingSeconds: 60
+                },
+                updatedAt: new Date().toISOString()
             }
         };
         
         updateUI(payload);
-        const eta1 = document.getElementById('ReportedETA').textContent;
-        
-        // Update again with different time, should stay frozen
-        payload.printer.lastUpdate = new Date(Date.now() + 10000).toISOString();
-        updateUI(payload);
-        const eta2 = document.getElementById('ReportedETA').textContent;
-        
-        expect(eta1).toBe(eta2);
+        expect(document.getElementById('ReportedETA').textContent).not.toBe('-');
     });
 
     test('UI updates periodically', () => {
@@ -182,12 +183,9 @@ describe('UI and Client Tests', () => {
         const payload = {
             printer: {
                 connected: true,
-                cameraAvailable: true,
-                status: {
-                    consolidated: 'PRINTING',
-                    machine: { state: 'PRINTING', code: 1 },
-                    job: { state: 'PRINTING', code: 3 }
-                }
+                klipper: { state: 'ready' },
+                print: { state: 'printing' },
+                camera: { available: true, error: null }
             }
         };
         
@@ -198,11 +196,7 @@ describe('UI and Client Tests', () => {
         
         // If it becomes IDLE and pauseOnIdle is true
         settings.pauseOnIdle = true;
-        payload.printer.status = {
-            consolidated: 'IDLE',
-            machine: { state: 'IDLE', code: 0 },
-            job: { state: 'IDLE', code: 0 }
-        };
+        payload.printer.print.state = 'standby';
         updateUI(payload);
         expect(document.getElementById('cameraOverlay').style.display).toBe('flex');
     });

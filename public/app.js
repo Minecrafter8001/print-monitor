@@ -4,8 +4,6 @@ let reconnectInterval = null;
 let cameraInitialized = false;
 let snapshotTaken = false;
 let lastPrinterState = null;
-let frozenETA = null;
-let frozenETAState = null;
 let lastPayload = null;
 let toastIdCounter = 0;
 
@@ -139,113 +137,70 @@ function updateUI(payload) {
     userCountText.textContent = `${uniqueUsers} user${uniqueUsers === 1 ? '' : 's'} online`;
 
     // Printer info
-    document.getElementById('printerName').textContent = printer.printerName || '-';
+    document.getElementById('printerName').textContent = printer.name || '-';
 
 
 
     // --- Status background color map ---
     const STATUS_BG = {
-        IDLE: '#444',
-        PRINTING: '#3498db',
-        FILE_TRANSFERRING: '#888',
-        LEVELING: '#20b2aa',
-        STOPPING: '#e67e22',
-        STOPPED: '#e74c3c',
-        HOMING: '#3498db',
-        RECOVERY: '#f39c12',
-        PREHEATING: '#ff9800',
-        PAUSED: '#e67e22',
-        PAUSING: '#e67e22',
-        COMPLETE: '#27ae60',
-        ERROR: '#e74c3c',
-        DROPPING: '#888',
-        LIFTING: '#888',
-        LOADING: '#888',
-        FILE_CHECKING: '#888',
-        UNKNOWN: '#888',
+        ready: '#27ae60',
+        startup: '#f39c12',
+        shutdown: '#e74c3c',
+        error: '#e74c3c',
+        disconnected: '#888',
+        standby: '#444',
+        printing: '#3498db',
+        paused: '#e67e22',
+        complete: '#27ae60',
+        cancelled: '#e74c3c'
     };
     function getStatusBg(status) {
-        return STATUS_BG[status] || STATUS_BG.UNKNOWN;
+        return STATUS_BG[status] || '#888';
     }
 
-    // --- Display machine state ---
-    const machineState = printer.status?.machine?.state || 'UNKNOWN';
-    const machineStateElement = document.getElementById('machineState');
-    machineStateElement.textContent = machineState;
-    machineStateElement.className = 'value state';
-    machineStateElement.style.background = getStatusBg(machineState);
-    machineStateElement.style.color = '#fff';
+    const klipperState = printer.klipper?.state || 'disconnected';
+    const klipperStateElement = document.getElementById('klipperState');
+    klipperStateElement.textContent = klipperState.toUpperCase();
+    klipperStateElement.className = 'value state';
+    klipperStateElement.style.background = getStatusBg(klipperState);
+    klipperStateElement.style.color = '#fff';
 
-    // --- Display job state ---
-    const jobState = printer.status?.job?.state || 'UNKNOWN';
-    const jobStateElement = document.getElementById('jobState');
-    jobStateElement.textContent = jobState;
-    jobStateElement.className = 'value state';
-    jobStateElement.style.background = getStatusBg(jobState);
-    jobStateElement.style.color = '#fff';
+    const printState = printer.print?.state || 'standby';
+    const printStateElement = document.getElementById('printState');
+    printStateElement.textContent = printState.toUpperCase();
+    printStateElement.className = 'value state';
+    printStateElement.style.background = getStatusBg(printState);
+    printStateElement.style.color = '#fff';
 
-
-
-    document.getElementById('currentFile').textContent = printer.currentFile || '-';
+    document.getElementById('currentFile').textContent = printer.print?.filename || '-';
 
     // Last update (absolute clock time)
     document.getElementById('lastUpdate').textContent =
-        printer.lastUpdate ? formatClockTime(new Date(printer.lastUpdate)) : '-';
+        printer.updatedAt ? formatClockTime(new Date(printer.updatedAt)) : '-';
 
     // Progress
 
-    // Use new progress field if available, fallback to old
-    const progress = printer.progress || printer.Progress || 0;
+    const progress = printer.print?.progressPercent || 0;
     
     document.getElementById('progressFill').style.width = `${progress.toFixed(0)}%`;
     document.getElementById('progressText').textContent = `${progress.toFixed(0)}%`;
 
     // Durations
     document.getElementById('printTime').textContent =
-        formatDuration(printer.printTime);
+        formatDuration(printer.print?.elapsedSeconds);
 
     document.getElementById('remainingTime').textContent =
-        formatDuration(printer.remainingTime);
+        formatDuration(printer.print?.estimatedRemainingSeconds);
 
-    // ETA freeze logic based on job and machine state
-    // Freeze ETA when progress is 100 and neither is PRINTING; unfreeze when either is PRINTING
     const etaElem = document.getElementById('ReportedETA');
-    const machineStateUpper = (machineState || '').toUpperCase();
-    const jobStateUpper = (jobState || '').toUpperCase();
-
-    // Helper to get stable ETA based on last update time
-    const getStableETA = () => {
-        if (printer.remainingTime && Number.isFinite(printer.remainingTime)) {
-            const baseTime = printer.lastUpdate ? new Date(printer.lastUpdate).getTime() : Date.now();
-            return formatClockTime(new Date(baseTime + printer.remainingTime * 1000));
-        }
-        return '-';
-    };
-
-    if (machineStateUpper === 'PRINTING' || jobStateUpper === 'PRINTING') {
-        // Unfreeze ETA when either is printing
-        etaElem.textContent = getStableETA();
-        frozenETA = null;
-        frozenETAState = null;
-    } else if (progress >= 100) {
-        if (!frozenETA) {
-            // Only freeze if not already frozen
-            frozenETA = getStableETA();
-            frozenETAState = jobStateUpper || machineStateUpper;
-        }
-        etaElem.textContent = frozenETA;
-    } else if (frozenETA) {
-        // Stay frozen while not printing and after 100%
-        etaElem.textContent = frozenETA;
-    } else {
-        // Default ETA logic
-        etaElem.textContent = getStableETA();
-        frozenETA = null;
-        frozenETAState = null;
-    }
+    const remainingSeconds = printer.print?.estimatedRemainingSeconds;
+    const updatedAt = printer.updatedAt ? new Date(printer.updatedAt).getTime() : Date.now();
+    etaElem.textContent = Number.isFinite(remainingSeconds) && remainingSeconds > 0
+        ? formatClockTime(new Date(updatedAt + remainingSeconds * 1000))
+        : '-';
 
     // Layer info
-    const layers = printer.layers || { current: 0, total: 0 };
+    const layers = printer.print?.layers || { current: 0, total: 0 };
     const completedLayers = layers.current || 0;
     const totalLayers = layers.total || 0;
     const remainingLayers = totalLayers > 0 ? Math.max(0, totalLayers - completedLayers) : 0;
@@ -260,9 +215,11 @@ function updateUI(payload) {
     if (remainingLayersElem) remainingLayersElem.textContent = remainingLayers;
 
     // Temperatures
-    const temps = printer.temperatures || { bed: {}, nozzle: {}, enclosure: {} };
-    document.getElementById('nozzleTemp').textContent = Math.round(temps.nozzle.current || 0);
-    document.getElementById('nozzleTarget').textContent = Math.round(temps.nozzle.target || 0);
+    const temps = printer.temperatures || { bed: {}, activeTool: {}, enclosure: {} };
+    const activeToolName = temps.activeTool?.friendlyName || 'Nozzle';
+    document.getElementById('activeToolLabel').textContent = activeToolName;
+    document.getElementById('nozzleTemp').textContent = Math.round(temps.activeTool?.current || 0);
+    document.getElementById('nozzleTarget').textContent = Math.round(temps.activeTool?.target || 0);
     document.getElementById('bedTemp').textContent = Math.round(temps.bed.current || 0);
     document.getElementById('bedTarget').textContent = Math.round(temps.bed.target || 0);
     document.getElementById('enclosureTemp').textContent = Math.round(temps.enclosure.current || 0);
@@ -275,11 +232,10 @@ function updateUI(payload) {
     const cameraOverlay = document.getElementById('cameraOverlay');
     const cameraPlaceholderLabel = cameraPlaceholder.querySelector('span') || cameraPlaceholder;
 
-    // Use job state for camera idle detection - check if either machine or job is idle
-    lastPrinterState = jobState;
+    lastPrinterState = printState;
 
-    if (printer.cameraAvailable) {
-        const isIdle = jobState === "IDLE" || machineState === "IDLE";
+    if (printer.camera?.available) {
+        const isIdle = printState === 'standby';
         if (!cameraInitialized) {
             cameraFeed.src = '/api/camera';
             cameraInitialized = true;
@@ -314,7 +270,7 @@ function updateUI(payload) {
         cameraPlaceholder.style.display = 'flex';
         cameraOverlay.style.display = 'none';
         cameraInitialized = false;
-        const message = printer.cameraError || 'No camera feed available';
+        const message = printer.camera?.error || 'No camera feed available';
         if (cameraPlaceholderLabel) {
             cameraPlaceholderLabel.textContent = message;
         }
@@ -326,7 +282,7 @@ function updateUI(payload) {
 function toggleCameraStream() {
     const cameraFeed = document.getElementById('cameraFeed');
     const cameraOverlay = document.getElementById('cameraOverlay');
-    const isIdle = (lastPrinterState || '').toLowerCase() === 'idle';
+    const isIdle = lastPrinterState === 'standby';
 
     if (!isIdle) return;
 
@@ -419,7 +375,7 @@ function dismissToast(card, container) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('Elegoo Print Monitor starting...');
+    console.log('Snapmaker Moonraker Print Monitor starting...');
     initPauseOnIdleButton();
     connectWebSocket();
 

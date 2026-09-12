@@ -11,11 +11,10 @@ const http = require('http');
 const WebSocket = require('ws');
 require('utils/logger');
 const { getClientIP, isLocalIP } = require('utils/ip-utils');
-const { parseStatusPayload } = require('utils/status-utils');
+const { mapMoonrakerStatus } = require('utils/moonraker-status');
 const UserStats = require('utils/user-stats');
 
-const PrinterDiscovery = require('utils/printer-discovery');
-const SDCPClient = require('utils/sdcp-client');
+const MoonrakerClient = require('utils/moonraker-client');
 
 const app = express();
 const server = http.createServer(app);
@@ -23,74 +22,46 @@ const wss = new WebSocket.Server({ server });
 
 const MAX_FPS = 15;
 const PORT = process.env.PORT || 3000;
-const STATUS_POLL_INTERVAL = 2000;
+const MOONRAKER_URL = process.env.MOONRAKER_URL || '';
 const WS_UPDATE_INTERVAL = (() => {
   const value = Number.parseInt(process.env.WS_UPDATE_INTERVAL, 10);
   return Number.isFinite(value) && value > 0 ? value : 1000;
 })();
 const CAMERA_MAX_START_FAILURES = 3;
-const CAMERA_ACK_ERRORS = {
-  1: 'Exceeded maximum simultaneous streaming limit',
-  2: 'Camera does not exist',
-  3: 'Unknown error'
-};
 
 // Store printer data
 let printerClient = null;
-let defaultPrinterStatus = {
+const defaultPrinterStatus = {
   connected: false,
-  printerName: 'Unknown',
-  state: 'Disconnected',
-  progress: 0,
-  layerProgress: 0,
+  name: 'Unknown',
+  klipper: {
+    state: 'disconnected',
+    message: ''
+  },
+  print: {
+    state: 'standby',
+    filename: '',
+    progressPercent: 0,
+    elapsedSeconds: 0,
+    estimatedRemainingSeconds: null,
+    layers: { current: 0, total: 0 }
+  },
   temperatures: {
     bed: { current: 0, target: 0 },
-    nozzle: { current: 0, target: 0 },
-    enclosure: { current: 0, target: 0 }
+    activeTool: { name: null, friendlyName: null, current: 0, target: 0 },
+    enclosure: { name: null, current: 0, target: 0 },
+    tools: []
   },
-  currentFile: '',
-  printTime: 0,
-  remainingTime: 0,
-  calculatedTime: null,
-  cameraAvailable: false,
-  cameraError: null,
-  lastUpdate: null,
-  customState: 0,
-  layers: {
-    total: 0,
-    finished: 0
+  camera: {
+    available: false,
+    error: null
   },
-  // Status object containing machine and job states
-  status: {
-    consolidated: 'UNKNOWN',
-    machine: { state: 'UNKNOWN', code: null },
-    job: { state: 'UNKNOWN', code: null }
-  },
-  status_code: null,
-  prev_status: null
+  updatedAt: null
 };
-let printerStatus = { ...defaultPrinterStatus };
+let printerStatus = structuredClone(defaultPrinterStatus);
 let reconnectSetupInProgress = false;
-let reconnectSetupNeeded = false;
-/**
- * Set custom status codes based on printer info
- * @param {object} info - Raw printer info/status
- */
-function setCustomState(info) {
-  if (!info || !info.Status) {
-    return;
-  }
-  const s = info.Status;
-  let code = 0;
-  // Example: Custom state 1: Printing but no file
-  if (s.CurrentStatus && s.CurrentStatus[0] === 1) {
-    if (!s.PrintInfo || !s.PrintInfo.Filename) {
-      code = 1;
-    }
-  }
-  // Add more custom state code logic here as needed
-  printerStatus.customState = code;
-}
+let currentMetadataFilename = null;
+let currentFileMetadata = {};
 
 // WebSocket clients
 const webClients = new Set();
@@ -109,8 +80,6 @@ const resolveClientIP = (req, socket) =>
   getClientIP(req, socket, DEBUG_DISABLE_LOCAL_IP_FILTER);
 
 function updateUserStatsAndBroadcast() {
-  printerStatus.users = userStats.getSnapshot();
-  // Notify connected web clients of updated stats
   broadcastToClients({ type: 'status', data: buildStatusPayload() });
 }
 
@@ -138,21 +107,13 @@ function handleCameraStartFailure(errMessage) {
 
 // Set printer status to disconnected and broadcast
 function setDisconnectedStatus() {
-  if (
-    printerStatus.connected === false &&
-    printerStatus.printerName === 'Unknown' &&
-    printerStatus.state === 'Disconnected'
-  ) return;
-  reconnectSetupNeeded = true;
-  printerStatus = {
-    ...defaultPrinterStatus,
-    lastUpdate: new Date().toISOString()
-  };
+  if (!printerStatus.connected && printerStatus.klipper.state === 'disconnected') return;
+  printerStatus = structuredClone(defaultPrinterStatus);
+  printerStatus.updatedAt = new Date().toISOString();
   broadcastToClients({ type: 'status', data: buildStatusPayload() });
 }
 
 function buildStatusPayload() {
-  printerStatus.users = printerStatus.users || userStats.getSnapshot();
   return {
     printer: printerStatus,
     users: userStats.getSnapshot()
@@ -164,20 +125,7 @@ app.use(express.static('public'));
 
 // API endpoint to get current printer status
 app.get('/api/status', (req, res) => {
-  // Ensure latest user stats are present
-  printerStatus.users = userStats.getSnapshot();
   res.json(buildStatusPayload());
-});
-
-// API endpoint to discover printers
-app.get('/api/discover', async (req, res) => {
-  try {
-    const discovery = new PrinterDiscovery();
-    const printers = await discovery.discover(3000);
-    res.json({ success: true, printers });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
 });
 
 app.get('/api/camera', async (req, res) => {
@@ -223,18 +171,6 @@ app.get('/api/camera', async (req, res) => {
   req.on('close', cleanup);
   req.on('error', cleanup);
   res.on('error', cleanup);
-});
-
-// API endpoint to serve H.264 transcoded camera stream
-// API endpoint to connect to a specific printer
-app.post('/api/connect/:ip', express.json(), async (req, res) => {
-  try {
-    await connectToPrinter(req.params.ip);
-    res.json({ success: true, message: 'Connected to printer' });
-  } catch (err) {
-    printerStatus.connected = false;
-    res.status(500).json({ success: false, error: err.message });
-  }
 });
 
 // Debug endpoint to trigger a controlled restart (local-only, flag-gated)
@@ -284,10 +220,11 @@ app.get('/api/admin', (req, res) => {
       },
       printer: {
         connected: printerStatus.connected,
-        name: printerStatus.printerName,
-        state: printerStatus.state,
-        cameraAvailable: printerStatus.cameraAvailable,
-        lastUpdate: printerStatus.lastUpdate
+        name: printerStatus.name,
+        klipperState: printerStatus.klipper.state,
+        printState: printerStatus.print.state,
+        cameraAvailable: printerStatus.camera.available,
+        updatedAt: printerStatus.updatedAt
       }
     }
   });
@@ -370,126 +307,38 @@ function broadcastToClients(message) {
 }
 
 /**
- * Update printer status from SDCP data
+ * Update printer status from Moonraker's cached printer objects.
  */
-let isFirstUpdate = true;
-
-function updatePrinterStatus(data) {
-  if (!data) {
-    // Printer is unreachable or offline
-    reconnectSetupNeeded = true;
-    printerStatus.connected = false;
-    printerStatus.state = 'Disconnected';
-    printerStatus.cameraAvailable = false;
-    printerStatus.cameraError = 'Printer unreachable';
-    printerStatus.lastUpdate = new Date().toISOString();
-    printerStatus.customState = 0;
-    printerStatus.machine_status = 'UNKNOWN';
-    printerStatus.job_status = null;
-    printerStatus.machine_status_code = null;
-    printerStatus.job_status_code = null;
-    broadcastToClients({ type: 'status', data: buildStatusPayload() });
+function updatePrinterStatus(objects) {
+  if (!objects) {
+    setDisconnectedStatus();
     return;
   }
 
-  // If we receive data after a disconnect, treat this as a reconnection
-  if (!printerStatus.connected) {
-    const reconnectName = data.Attributes?.Name || printerStatus.printerName;
-    ensureReconnectSetup(reconnectName).catch((err) => {
-      console.error('Failed to refresh printer state after reconnection:', err.message);
+  const nextStatus = mapMoonrakerStatus(objects, currentFileMetadata);
+  const previousState = printerStatus.print.state;
+  if (previousState !== nextStatus.print.state) {
+    console.log(`[Status] Print state changed: ${previousState} -> ${nextStatus.print.state}`);
+  }
+  printerStatus = { ...printerStatus, ...nextStatus };
+
+  broadcastToClients({ type: 'status', data: buildStatusPayload() });
+
+  const filename = nextStatus.print.filename;
+  if (!filename) {
+    currentMetadataFilename = null;
+    currentFileMetadata = {};
+  } else if (filename !== currentMetadataFilename && printerClient) {
+    currentMetadataFilename = filename;
+    currentFileMetadata = {};
+    printerClient.getFileMetadata(filename).then((metadata) => {
+      if (currentMetadataFilename !== filename) return;
+      currentFileMetadata = metadata || {};
+      updatePrinterStatus(printerClient.objectState);
+    }).catch((err) => {
+      console.warn(`Unable to load metadata for ${filename}:`, err.message);
     });
   }
-
-  // Log first status update for debugging
-  if (isFirstUpdate) {
-    console.log('\n=== First Status Update from Printer ===');
-    console.log(JSON.stringify(data, null, 2));
-    console.log('========================================\n');
-    isFirstUpdate = false;
-  }
-
-  printerStatus.lastUpdate = new Date().toISOString();
-
-  // Update based on available data
-  if (data.Attributes) {
-    printerStatus.printerName = data.Attributes.Name || printerStatus.printerName;
-  }
-
-  // Only update status fields if this is a real status payload (not a response/ack)
-  if (data.Status) {
-    // Parse and map separated states and consolidated status
-    const { 
-      status,
-      status_code
-    } = parseStatusPayload(data);
-
-    // Update status object with new values
-    const new_consolidated = status.consolidated;
-    let use_new_status = new_consolidated;
-    
-    // Only update if new value is valid (not null/undefined/UNKNOWN)
-    if (!new_consolidated || new_consolidated === 'UNKNOWN') {
-      use_new_status = printerStatus.status.consolidated;
-    }
-
-    // Track transitions for logging/notifications
-    if (printerStatus.status.consolidated !== use_new_status) {
-      console.log(`[Status] Status changed: ${printerStatus.status.consolidated} -> ${use_new_status}`);
-      printerStatus.prev_status = printerStatus.status.consolidated;
-    }
-    
-    printerStatus.status = status;
-    printerStatus.status_code = status_code;
-
-    // For backward compatibility, keep .state as before
-    printerStatus.state = status_code;
-  }
-
-  // Handle actual printer status structure
-  if (data.Status) {
-    const s = data.Status;
-    // Print progress
-    if (s.PrintInfo) {
-      // Use printer-reported progress directly
-      printerStatus.progress = s.PrintInfo.Progress || 0;
-      printerStatus.currentFile = s.PrintInfo.Filename || '';
-      // Convert ticks to seconds for time display
-      printerStatus.printTime = Math.floor(s.PrintInfo.CurrentTicks || 0);
-      const totalTicks = s.PrintInfo.TotalTicks || 0;
-      printerStatus.remainingTime = Math.floor(totalTicks - printerStatus.printTime);
-      // Use printer-reported layer info only
-      printerStatus.layers = {
-        total: s.PrintInfo.TotalLayer || 0,
-        current: s.PrintInfo.CurrentLayer || 0
-      };
-      // Manual progress calculations removed; only using printer-reported progress and remainingTime
-    }
-    // Temperatures - using actual field names from printer
-    if (s.TempOfHotbed !== undefined) {
-      printerStatus.temperatures.bed.current = Math.round(s.TempOfHotbed);
-    }
-    if (s.TempTargetHotbed !== undefined) {
-      printerStatus.temperatures.bed.target = Math.round(s.TempTargetHotbed);
-    }
-    if (s.TempOfNozzle !== undefined) {
-      printerStatus.temperatures.nozzle.current = Math.round(s.TempOfNozzle);
-    }
-    if (s.TempTargetNozzle !== undefined) {
-      printerStatus.temperatures.nozzle.target = Math.round(s.TempTargetNozzle);
-    }
-    if (s.TempOfBox !== undefined) {
-      printerStatus.temperatures.enclosure.current = Math.round(s.TempOfBox);
-    }
-    if (s.TempTargetBox !== undefined) {
-      printerStatus.temperatures.enclosure.target = Math.round(s.TempTargetBox);
-    }
-  }
-
-  // Set custom state code
-  setCustomState(data);
-
-  // Broadcast update to all web clients
-  broadcastToClients({ type: 'status', data: buildStatusPayload() });
 }
 
 /**
@@ -499,30 +348,18 @@ async function setupCameraURL() {
   if (!printerClient) return;
 
   try {
-    const cameraResponse = await printerClient.requestCameraURL();
-    const cameraData = cameraResponse?.Data?.Data;
-    
-    if (!cameraData) return;
+    const webcamResponse = await printerClient.getWebcams();
+    const webcam = webcamResponse.webcams?.find((entry) => entry.enabled && entry.stream_url);
+    const configuredURL = process.env.CAMERA_STREAM_URL;
+    const streamURL = configuredURL || webcam?.stream_url;
+    if (!streamURL) throw new Error('No enabled Moonraker webcam found');
 
-    const { Ack: ack, VideoUrl: videoUrl } = cameraData;
-    
-    if (ack === 0 && videoUrl) {
-      printerStatus.cameraAvailable = true;
-      printerStatus.cameraError = null;
-      // Store the URL locally for polling, but don't send to clients
-      cameraStreamURL = `http://${videoUrl}`;
-      console.log('Camera stream enabled');
-    } else {
-      const reason = CAMERA_ACK_ERRORS[ack] || `Unknown error code ${ack}`;
-      console.warn('Camera not available:', reason);
-      printerStatus.cameraAvailable = false;
-      printerStatus.cameraError = reason;
-      cameraStreamURL = null;
-    }
+    cameraStreamURL = printerClient.resolveURL(streamURL);
+    printerStatus.camera = { available: true, error: null };
+    console.log(`Camera stream enabled: ${cameraStreamURL}`);
   } catch (err) {
     console.warn('Failed to setup camera:', err.message);
-    printerStatus.cameraAvailable = false;
-    printerStatus.cameraError = err.message;
+    printerStatus.camera = { available: false, error: err.message };
     cameraStreamURL = null;
   }
 }
@@ -536,7 +373,7 @@ async function setupCameraURL() {
 async function onPrinterConnected(printerName = null) {
   printerStatus.connected = true;
   if (printerName) {
-    printerStatus.printerName = printerName;
+    printerStatus.name = printerName;
   }
   // Refresh camera availability on each (re)connect
   await setupCameraURL();
@@ -549,9 +386,7 @@ async function ensureReconnectSetup(printerName = null) {
   reconnectSetupInProgress = true;
   try {
     await onPrinterConnected(printerName);
-    reconnectSetupNeeded = false;
   } catch (err) {
-    reconnectSetupNeeded = true;
     throw err;
   } finally {
     reconnectSetupInProgress = false;
@@ -561,43 +396,43 @@ async function ensureReconnectSetup(printerName = null) {
 /**
  * Connect to a printer at the given IP address
  */
-async function connectToPrinter(printerIP, printerName = null) {
+async function connectToPrinter(moonrakerURL, printerName = null) {
   // Disconnect existing connection
   if (printerClient) {
     printerClient.disconnect();
   }
 
   // Create new connection
-  printerClient = new SDCPClient(printerIP);
-  // Always re-attach status handler
+  printerClient = new MoonrakerClient(moonrakerURL);
   printerClient.onStatus(updatePrinterStatus);
 
-  // Listen for disconnect/error events from SDCP client
   const handlePrinterLost = () => {
     setDisconnectedStatus();
   };
   printerClient.on('disconnect', handlePrinterLost);
   printerClient.on('error', handlePrinterLost);
-  printerClient.on('reconnected', () => {
-    if (!reconnectSetupNeeded) return;
-    ensureReconnectSetup(printerName).catch((err) => {
+  printerClient.on('klippy-disconnected', handlePrinterLost);
+  printerClient.on('reconnected', async () => {
+    try {
+      const resolvedPrinterName = printerName || await printerClient.getPrinterName();
+      await ensureReconnectSetup(resolvedPrinterName);
+    } catch (err) {
       console.error('Failed to refresh printer state after reconnection:', err.message);
-    });
+    }
   });
 
   // Try to connect and handle errors
   try {
     await printerClient.connect();
-    printerClient.startStatusPolling(STATUS_POLL_INTERVAL);
-    await ensureReconnectSetup(printerName);
+    const resolvedPrinterName = printerName || await printerClient.getPrinterName();
+    await ensureReconnectSetup(resolvedPrinterName);
   } catch (err) {
     // Printer is offline or unreachable: fully reset status and broadcast
-    printerStatus = {
-      ...defaultPrinterStatus,
-      lastUpdate: new Date().toISOString()
-    };
+    printerStatus = structuredClone(defaultPrinterStatus);
+    printerStatus.updatedAt = new Date().toISOString();
     broadcastToClients({ type: 'status', data: buildStatusPayload() });
     console.error('Failed to connect to printer:', err.message);
+    throw err;
   }
 }
 
@@ -606,8 +441,10 @@ async function connectToPrinter(printerIP, printerName = null) {
  */
 async function startCameraStreaming() {
   if (!cameraStreamURL) {
-    printerStatus.cameraAvailable = false;
-    printerStatus.cameraError = printerStatus.cameraError || 'Camera not available';
+    printerStatus.camera = {
+      available: false,
+      error: printerStatus.camera.error || 'Camera not available'
+    };
     broadcastToClients({ type: 'status', data: buildStatusPayload() });
     resetCameraFailureTracker();
     return;
@@ -621,7 +458,7 @@ async function startCameraStreaming() {
     }
 
     resetCameraFailureTracker();
-    printerStatus.cameraError = null;
+    printerStatus.camera = { available: true, error: null };
 
     // Extract boundary from multipart content-type header
     const contentType = response.headers.get('content-type');
@@ -704,8 +541,7 @@ async function startCameraStreaming() {
     printerStream = processStream();
   } catch (err) {
     console.error('Failed to start camera stream:', err.message);
-    printerStatus.cameraAvailable = false;
-    printerStatus.cameraError = err.message;
+    printerStatus.camera = { available: false, error: err.message };
     broadcastToClients({ type: 'status', data: buildStatusPayload() });
     handleCameraStartFailure(err.message);
     // Retry after a delay
@@ -726,79 +562,26 @@ function stopCameraStreaming() {
 
 
 /**
- * Auto-discover and connect to printers, retrying each up to 3 times before moving to the next
+ * Connect to the configured Moonraker instance and retry startup failures.
  */
-let autoConnectState = {
-  printers: [],
-  currentIdx: 0,
-  failCount: 0
-};
-
 async function autoConnect() {
+  if (!MOONRAKER_URL) {
+    console.warn('MOONRAKER_URL is not set; configure it before starting the monitor');
+    return;
+  }
+
   try {
-    // If no printers list or exhausted, rediscover
-    if (!autoConnectState.printers.length || autoConnectState.currentIdx >= autoConnectState.printers.length) {
-      console.log('Auto-discovering printers...');
-      const discovery = new PrinterDiscovery();
-      let printers = await discovery.discover(5000);
-      // Filter out proxy servers
-      printers = printers.filter(p => {
-        // Proxy flag may be in Data.Attributes.Proxy or Attributes.Proxy
-        const proxy = (p.Data && p.Data.Attributes && p.Data.Attributes.Proxy) || (p.Attributes && p.Attributes.Proxy);
-        return !proxy;
-      });
-      if (printers.length === 0) {
-        console.log('No eligible printers found on network. Retrying in 5 seconds...');
-        autoConnectState = { printers: [], currentIdx: 0, failCount: 0 };
-        setTimeout(autoConnect, 5000);
-        return;
-      }
-      autoConnectState.printers = printers;
-      autoConnectState.currentIdx = 0;
-      autoConnectState.failCount = 0;
-    }
-
-    const printer = autoConnectState.printers[autoConnectState.currentIdx];
-    console.log(`Trying to connect to printer ${autoConnectState.currentIdx + 1}/${autoConnectState.printers.length} at:`, printer.address);
-
-    try {
-      await connectToPrinter(
-        printer.address,
-        printer.Name || printer.Id || 'Elegoo Printer'
-      );
-      console.log('Connected to printer:', printerStatus.printerName);
-      // Start camera streaming
-      await startCameraStreaming();
-      // Reset fail count on success
-      autoConnectState.failCount = 0;
-    } catch (err) {
-      autoConnectState.failCount++;
-      console.error(`Auto-connect failed (${autoConnectState.failCount}/3) for ${printer.address}:`, err.message);
-      if (autoConnectState.failCount >= 3) {
-        // Move to next printer
-        autoConnectState.currentIdx++;
-        autoConnectState.failCount = 0;
-        if (autoConnectState.currentIdx >= autoConnectState.printers.length) {
-          // All tried, rediscover after delay
-          console.log('All printers failed, rediscovering in 5 seconds...');
-          autoConnectState = { printers: [], currentIdx: 0, failCount: 0 };
-          setTimeout(autoConnect, 5000);
-          return;
-        }
-      }
-      // Try again after delay (either retry or next printer)
-      setTimeout(autoConnect, 5000);
-      return;
-    }
+    console.log(`Connecting to configured Moonraker instance at ${MOONRAKER_URL}`);
+    await connectToPrinter(MOONRAKER_URL);
+    console.log('Connected to printer:', printerStatus.name);
   } catch (err) {
     console.error('Auto-connect error:', err.message);
-    setTimeout(autoConnect, 5000);
   }
 }
 
 // Start server
 server.listen(PORT, () => {
-  console.log(`Elegoo Print Monitor server running on http://localhost:${PORT}`);
+  console.log(`Snapmaker Print Monitor server running on http://localhost:${PORT}`);
   
   // Auto-connect to printer on startup
   autoConnect();

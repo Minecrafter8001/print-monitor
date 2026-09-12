@@ -1,7 +1,7 @@
 {
-  "name": "elegoo-print-monitor",
+  "name": "snapmaker-print-monitor",
   "version": "1.0.0",
-  "description": "Node.js web server for monitoring Elegoo 3D printers with real-time status and camera feed",
+  "description": "Node.js monitor for Snapmaker and Klipper printers through Moonraker",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -9,7 +9,9 @@
     "test": "jest"
   },
   "keywords": [
-    "elegoo",
+    "snapmaker",
+    "klipper",
+    "moonraker",
     "3d-printer",
     "monitoring",
     "centauri-carbon"
@@ -19,7 +21,6 @@
   "dependencies": {
     "express": "^4.18.2",
     "module-alias": "^2.2.3",
-    "uuid": "^9.0.1",
     "ws": "^8.17.1"
   },
   "devDependencies": {
