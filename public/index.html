@@ -91,33 +91,47 @@
             <div class="card">
                 <h2>Temperatures</h2>
                 <div class="temp-grid">
-                    <div class="temp-item">
-                        <div class="temp-icon">N</div>
-                        <div class="temp-info">
-                            <div class="temp-label" id="activeToolLabel">Nozzle</div>
-                            <div class="temp-value">
-                                <span id="nozzleTemp">0</span>°C / 
-                                <span id="nozzleTarget">0</span>°C
-                            </div>
+                    <div class="toolhead-grid" id="toolheadGrid">
+                        <div class="toolhead-tile" id="toolhead0">
+                            <div class="toolhead-label">Toolhead 1</div>
+                            <div class="toolhead-current"><span class="tool-current">0</span>°C</div>
+                            <div class="toolhead-target">Setpoint <span class="tool-target">0</span>°C</div>
+                        </div>
+                        <div class="toolhead-tile" id="toolhead1">
+                            <div class="toolhead-label">Toolhead 2</div>
+                            <div class="toolhead-current"><span class="tool-current">0</span>°C</div>
+                            <div class="toolhead-target">Setpoint <span class="tool-target">0</span>°C</div>
+                        </div>
+                        <div class="toolhead-tile" id="toolhead2">
+                            <div class="toolhead-label">Toolhead 3</div>
+                            <div class="toolhead-current"><span class="tool-current">0</span>°C</div>
+                            <div class="toolhead-target">Setpoint <span class="tool-target">0</span>°C</div>
+                        </div>
+                        <div class="toolhead-tile" id="toolhead3">
+                            <div class="toolhead-label">Toolhead 4</div>
+                            <div class="toolhead-current"><span class="tool-current">0</span>°C</div>
+                            <div class="toolhead-target">Setpoint <span class="tool-target">0</span>°C</div>
                         </div>
                     </div>
-                    <div class="temp-item">
-                        <div class="temp-icon">B</div>
-                        <div class="temp-info">
-                            <div class="temp-label">Bed</div>
-                            <div class="temp-value">
-                                <span id="bedTemp">0</span>°C / 
-                                <span id="bedTarget">0</span>°C
-                            </div>
-                        </div>
-                    </div>
+                    <div class="temperature-secondary-grid">
                         <div class="temp-item">
-                        <div class="temp-icon">E</div>
-                        <div class="temp-info">
-                            <div class="temp-label">Enclosure</div>
-                            <div class="temp-value">
-                                <span id="enclosureTemp">0</span>°C / 
-                                <span id="enclosureTarget">0</span>°C
+                            <div class="temp-icon">B</div>
+                            <div class="temp-info">
+                                <div class="temp-label">Bed</div>
+                                <div class="temp-value">
+                                    <span id="bedTemp">0</span>°C / 
+                                    <span id="bedTarget">0</span>°C
+                                </div>
+                            </div>
+                        </div>
+                        <div class="temp-item">
+                            <div class="temp-icon">E</div>
+                            <div class="temp-info">
+                                <div class="temp-label">Enclosure</div>
+                                <div class="temp-value">
+                                    <span id="enclosureTemp">0</span>°C / 
+                                    <span id="enclosureTarget">0</span>°C
+                                </div>
                             </div>
                         </div>
                     </div>

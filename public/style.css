@@ -106,6 +106,7 @@ header h1 {
 .card {
     background: #16213e;
     padding: 25px;
+    min-width: 0;
     border-radius: 10px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
     border: 1px solid #0f3460;
@@ -141,6 +142,9 @@ header h1 {
 .value {
     color: #e0e0e0;
     font-weight: 500;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    text-align: right;
 }
 
 .value.state {
@@ -207,7 +211,61 @@ header h1 {
 .temp-grid {
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 14px;
+}
+
+.toolhead-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.toolhead-tile {
+    min-width: 0;
+    min-height: 104px;
+    padding: 12px 10px;
+    background: #0b294b;
+    border: 1px solid #1a4d7a;
+    border-radius: 6px;
+    color: #8b9aad;
+    text-align: center;
+    transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.toolhead-tile.active {
+    background: #145483;
+    border-color: #00d4ff;
+    box-shadow: 0 0 12px rgba(0, 212, 255, 0.35);
+    color: #ffffff;
+}
+
+.toolhead-label {
+    font-size: 0.85rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.toolhead-current {
+    margin: 7px 0 5px;
+    color: #00d4ff;
+    font-size: 1.35rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.toolhead-tile.active .toolhead-current {
+    color: #ffffff;
+}
+
+.toolhead-target {
+    font-size: 0.75rem;
+    white-space: nowrap;
+}
+
+.temperature-secondary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
 }
 
 .temp-item {
@@ -479,10 +537,18 @@ footer {
     }
 
     .main-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
     }
 
     .time-info {
+        grid-template-columns: 1fr;
+    }
+
+    .toolhead-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .temperature-secondary-grid {
         grid-template-columns: 1fr;
     }
 

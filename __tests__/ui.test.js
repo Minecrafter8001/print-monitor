@@ -115,7 +115,12 @@ describe('UI and Client Tests', () => {
                     },
                     bed: { current: 60, target: 60 },
                     enclosure: { name: 'temperature_sensor cavity', current: 30, target: 0 },
-                    tools: []
+                    tools: [
+                        { name: 'extruder', friendlyName: 'Toolhead 1', current: 31, target: 0, active: false },
+                        { name: 'extruder1', friendlyName: 'Toolhead 2', current: 200, target: 210, active: false },
+                        { name: 'extruder2', friendlyName: 'Toolhead 3', current: 33, target: 0, active: false },
+                        { name: 'extruder3', friendlyName: 'Toolhead 4', current: 205, target: 215, active: true }
+                    ]
                 }
             }
         };
@@ -126,9 +131,11 @@ describe('UI and Client Tests', () => {
         expect(document.getElementById('printState').textContent).toBe('PRINTING');
         expect(document.getElementById('currentFile').textContent).toBe('test.gcode');
         expect(document.getElementById('progressText').textContent).toBe('51%');
-        expect(document.getElementById('activeToolLabel').textContent).toBe('Toolhead 4');
-        expect(document.getElementById('nozzleTemp').textContent).toBe('200');
-        expect(document.getElementById('nozzleTarget').textContent).toBe('210');
+        const toolhead4 = document.getElementById('toolhead3');
+        expect(toolhead4.querySelector('.tool-current').textContent).toBe('205');
+        expect(toolhead4.querySelector('.tool-target').textContent).toBe('215');
+        expect(toolhead4.classList.contains('active')).toBe(true);
+        expect(document.getElementById('toolhead0').classList.contains('active')).toBe(false);
         expect(document.getElementById('completedLayers').textContent).toBe('10');
         expect(document.getElementById('totalLayers').textContent).toBe('100');
         expect(document.getElementById('remainingLayers').textContent).toBe('90');

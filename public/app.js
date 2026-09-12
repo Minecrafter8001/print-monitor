@@ -110,6 +110,29 @@ function clearReconnectInterval() {
     }
 }
 
+function getToolheadIndex(tool) {
+    const suffix = tool?.name?.match(/^extruder(\d*)$/)?.[1];
+    if (suffix !== undefined) return suffix === '' ? 0 : Number.parseInt(suffix, 10);
+
+    const friendlyNumber = tool?.friendlyName?.match(/(\d+)$/)?.[1];
+    return friendlyNumber ? Number.parseInt(friendlyNumber, 10) - 1 : -1;
+}
+
+function updateToolheadTiles(tools = []) {
+    const toolsByIndex = new Map(tools.map(tool => [getToolheadIndex(tool), tool]));
+
+    for (let index = 0; index < 4; index += 1) {
+        const tile = document.getElementById(`toolhead${index}`);
+        const tool = toolsByIndex.get(index);
+        const isActive = tool?.active === true;
+
+        tile.querySelector('.tool-current').textContent = Math.round(tool?.current || 0);
+        tile.querySelector('.tool-target').textContent = Math.round(tool?.target || 0);
+        tile.classList.toggle('active', isActive);
+        tile.setAttribute('aria-current', isActive ? 'true' : 'false');
+    }
+}
+
 // ---------------- UI UPDATE ----------------
 
 function updateUI(payload) {
@@ -216,10 +239,7 @@ function updateUI(payload) {
 
     // Temperatures
     const temps = printer.temperatures || { bed: {}, activeTool: {}, enclosure: {} };
-    const activeToolName = temps.activeTool?.friendlyName || 'Nozzle';
-    document.getElementById('activeToolLabel').textContent = activeToolName;
-    document.getElementById('nozzleTemp').textContent = Math.round(temps.activeTool?.current || 0);
-    document.getElementById('nozzleTarget').textContent = Math.round(temps.activeTool?.target || 0);
+    updateToolheadTiles(temps.tools || []);
     document.getElementById('bedTemp').textContent = Math.round(temps.bed.current || 0);
     document.getElementById('bedTarget').textContent = Math.round(temps.bed.target || 0);
     document.getElementById('enclosureTemp').textContent = Math.round(temps.enclosure.current || 0);
