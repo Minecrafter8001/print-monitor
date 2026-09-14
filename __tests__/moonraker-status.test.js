@@ -14,8 +14,14 @@ describe('mapMoonrakerStatus', () => {
       toolhead: { extruder: 'extruder1' },
       extruder: { temperature: 32, target: 0, active_pin: false },
       extruder1: { temperature: 204.6, target: 210, active_pin: true },
+      'filament_motion_sensor e0_filament': { filament_detected: true },
+      'filament_motion_sensor e1_filament': { filament_detected: true },
       heater_bed: { temperature: 59.7, target: 60 }
-    }, { estimated_time: 600 });
+    }, {
+      estimated_time: 600,
+      filament_type: 'PETG;PLA',
+      filament_colour: '#112233;#F8F81C'
+    });
 
     expect(result).toMatchObject({
       connected: true,
@@ -37,8 +43,14 @@ describe('mapMoonrakerStatus', () => {
         },
         bed: { current: 60, target: 60 },
         tools: [
-          { name: 'extruder', friendlyName: 'Toolhead 1', current: 32, target: 0, active: false },
-          { name: 'extruder1', friendlyName: 'Toolhead 2', current: 205, target: 210, active: true }
+          {
+            name: 'extruder', friendlyName: 'Toolhead 1', current: 32, target: 0, active: false,
+            filament: { material: 'PETG', color: '#112233', source: 'gcode', loaded: true }
+          },
+          {
+            name: 'extruder1', friendlyName: 'Toolhead 2', current: 205, target: 210, active: true,
+            filament: { material: 'PLA', color: '#F8F81C', source: 'gcode', loaded: true }
+          }
         ]
       }
     });
@@ -81,5 +93,25 @@ describe('mapMoonrakerStatus', () => {
     expect(getToolFriendlyName('extruder')).toBe('Toolhead 1');
     expect(getToolFriendlyName('extruder1')).toBe('Toolhead 2');
     expect(getToolFriendlyName('extruder3')).toBe('Toolhead 4');
+  });
+
+  test('prefers detected RFID filament details over slicer metadata', () => {
+    const result = mapMoonrakerStatus({
+      extruder: { temperature: 20 },
+      filament_detect: {
+        info: [{ MAIN_TYPE: 'PLA', SUB_TYPE: 'PLA Basic', RGB_1: 0xE72F1D }]
+      },
+      'filament_motion_sensor e0_filament': { filament_detected: true }
+    }, {
+      filament_type: 'PETG',
+      filament_colour: '#000000'
+    });
+
+    expect(result.temperatures.tools[0].filament).toEqual({
+      material: 'PLA Basic',
+      color: '#E72F1D',
+      source: 'rfid',
+      loaded: true
+    });
   });
 });

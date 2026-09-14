@@ -42,6 +42,8 @@ The client first calls `printer.objects.list`, then subscribes to core status ob
 
 Partial `notify_status_update` messages are merged into a cached object state. File metadata is loaded through `server.files.metadata` when the active filename changes. Remaining time is therefore a slicer metadata estimate, not a value reported directly by Klipper.
 
+Toolhead filament labels prefer Snapmaker RFID material and color data. For untagged spools, the dashboard falls back to per-tool material and color stored in the active G-code metadata; the physical filament sensors still determine whether filament is loaded.
+
 Webcams are loaded through `server.webcams.list`. Relative stream URLs are resolved against `MOONRAKER_URL`; use `CAMERA_STREAM_URL` when the camera is exposed through a different reverse-proxy host or port.
 
 ## API

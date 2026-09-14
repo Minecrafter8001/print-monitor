@@ -51,6 +51,8 @@ describe('MoonrakerClient', () => {
       'toolhead',
       'extruder',
       'extruder1',
+      'filament_detect',
+      'filament_motion_sensor e0_filament',
       'temperature_sensor cavity',
       'fan_generic cavity_fan',
       'unrelated_object'
@@ -62,6 +64,8 @@ describe('MoonrakerClient', () => {
       toolhead: null,
       extruder: null,
       extruder1: null,
+      filament_detect: null,
+      'filament_motion_sensor e0_filament': null,
       'temperature_sensor cavity': null
     });
   });

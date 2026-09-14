@@ -125,9 +125,15 @@ function updateToolheadTiles(tools = []) {
         const tile = document.getElementById(`toolhead${index}`);
         const tool = toolsByIndex.get(index);
         const isActive = tool?.active === true;
+        const filament = tool?.filament || {};
+        const swatch = tile.querySelector('.filament-swatch');
 
         tile.querySelector('.tool-current').textContent = Math.round(tool?.current || 0);
         tile.querySelector('.tool-target').textContent = Math.round(tool?.target || 0);
+        tile.querySelector('.filament-material').textContent = filament.material || 'Unknown';
+        swatch.style.backgroundColor = filament.color || 'transparent';
+        swatch.classList.toggle('unknown', !filament.color);
+        tile.classList.toggle('filament-empty', filament.loaded === false);
         tile.classList.toggle('active', isActive);
         tile.setAttribute('aria-current', isActive ? 'true' : 'false');
     }

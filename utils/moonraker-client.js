@@ -9,7 +9,8 @@ const CORE_OBJECTS = [
   'display_status',
   'toolhead',
   'heaters',
-  'heater_bed'
+  'heater_bed',
+  'filament_detect'
 ];
 
 class MoonrakerClient extends EventEmitter {
@@ -164,6 +165,7 @@ class MoonrakerClient extends EventEmitter {
     const selectedObjects = availableObjects.filter((name) =>
       CORE_OBJECTS.includes(name) ||
       /^extruder\d*$/.test(name) ||
+      /^filament_(motion|switch)_sensor e\d+_filament$/.test(name) ||
       /^temperature_(sensor|fan) /.test(name) ||
       /^heater_generic /.test(name)
     );

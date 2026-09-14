@@ -4,6 +4,39 @@ function getToolFriendlyName(objectName) {
   return `Toolhead ${nozzleIndex + 1}`;
 }
 
+function getMetadataValues(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== 'string') return [];
+  return value.split(';').map((entry) => entry.replace(/^"|"$/g, '').trim());
+}
+
+function getFilamentDetails(objects, metadata, toolIndex) {
+  const rfid = objects.filament_detect?.info?.[toolIndex];
+  const rfidMaterial = rfid?.SUB_TYPE !== 'NONE' ? rfid?.SUB_TYPE : rfid?.MAIN_TYPE;
+  const sensor = objects[`filament_motion_sensor e${toolIndex}_filament`] ||
+    objects[`filament_switch_sensor e${toolIndex}_filament`];
+
+  if (rfidMaterial && rfidMaterial !== 'NONE') {
+    const rgb = Number(rfid.RGB_1 ?? rfid.ARGB_COLOR) & 0xffffff;
+    return {
+      material: rfidMaterial,
+      color: `#${rgb.toString(16).padStart(6, '0').toUpperCase()}`,
+      source: 'rfid',
+      loaded: typeof sensor?.filament_detected === 'boolean' ? sensor.filament_detected : null
+    };
+  }
+
+  const material = getMetadataValues(metadata.filament_type)[toolIndex] || null;
+  const colorValue = getMetadataValues(metadata.filament_colour)[toolIndex];
+  const color = /^#[0-9a-f]{6}$/i.test(colorValue || '') ? colorValue.toUpperCase() : null;
+  return {
+    material,
+    color,
+    source: material || color ? 'gcode' : null,
+    loaded: typeof sensor?.filament_detected === 'boolean' ? sensor.filament_detected : null
+  };
+}
+
 function mapMoonrakerStatus(objects, metadata = {}) {
   const webhooks = objects.webhooks || {};
   const printStats = objects.print_stats || {};
@@ -60,16 +93,17 @@ function mapMoonrakerStatus(objects, metadata = {}) {
         current: Math.round(enclosure.temperature || 0),
         target: 0
       },
-      tools: toolEntries.map(([name, tool]) => ({
+      tools: toolEntries.map(([name, tool], index) => ({
         name,
         friendlyName: getToolFriendlyName(name),
         current: Math.round(tool.temperature || 0),
         target: Math.round(tool.target || 0),
-        active: name === activeToolEntry[0]
+        active: name === activeToolEntry[0],
+        filament: getFilamentDetails(objects, metadata, index)
       }))
     },
     updatedAt: new Date().toISOString()
   };
 }
 
-module.exports = { getToolFriendlyName, mapMoonrakerStatus };
+module.exports = { getFilamentDetails, getToolFriendlyName, mapMoonrakerStatus };

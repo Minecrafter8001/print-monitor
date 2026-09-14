@@ -116,7 +116,7 @@ describe('UI and Client Tests', () => {
                     bed: { current: 60, target: 60 },
                     enclosure: { name: 'temperature_sensor cavity', current: 30, target: 0 },
                     tools: [
-                        { name: 'extruder', friendlyName: 'Toolhead 1', current: 31, target: 0, active: false },
+                        { name: 'extruder', friendlyName: 'Toolhead 1', current: 31, target: 0, active: false, filament: { material: 'PETG', color: '#8C9099', source: 'gcode', loaded: true } },
                         { name: 'extruder1', friendlyName: 'Toolhead 2', current: 200, target: 210, active: false },
                         { name: 'extruder2', friendlyName: 'Toolhead 3', current: 33, target: 0, active: false },
                         { name: 'extruder3', friendlyName: 'Toolhead 4', current: 205, target: 215, active: true }
@@ -136,6 +136,8 @@ describe('UI and Client Tests', () => {
         expect(toolhead4.querySelector('.tool-target').textContent).toBe('215');
         expect(toolhead4.classList.contains('active')).toBe(true);
         expect(document.getElementById('toolhead0').classList.contains('active')).toBe(false);
+        expect(document.querySelector('#toolhead0 .filament-material').textContent).toBe('PETG');
+        expect(document.querySelector('#toolhead0 .filament-swatch').style.backgroundColor).toBe('rgb(140, 144, 153)');
         expect(document.getElementById('completedLayers').textContent).toBe('10');
         expect(document.getElementById('totalLayers').textContent).toBe('100');
         expect(document.getElementById('remainingLayers').textContent).toBe('90');
