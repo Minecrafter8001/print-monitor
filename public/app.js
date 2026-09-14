@@ -6,6 +6,8 @@ let snapshotTaken = false;
 let lastPrinterState = null;
 let lastPayload = null;
 let toastIdCounter = 0;
+let etaEstimate = { filename: null, state: null, timestamp: null };
+const ETA_UPDATE_THRESHOLD_MS = 60000;
 
 // Settings object
 const defaultSettings = {
@@ -36,6 +38,35 @@ function formatClockTime(date) {
         second: '2-digit',
         hour12: true
     });
+}
+
+function getStableEtaTimestamp(printer) {
+    const print = printer.print || {};
+    const remainingSeconds = print.estimatedRemainingSeconds;
+    const canEstimate = Number.isFinite(remainingSeconds) && remainingSeconds > 0;
+    const isActive = print.state === 'printing' || print.state === 'paused';
+
+    if (!canEstimate || !isActive) {
+        etaEstimate = { filename: null, state: print.state || null, timestamp: null };
+        return null;
+    }
+
+    const updatedAt = printer.updatedAt ? new Date(printer.updatedAt).getTime() : Date.now();
+    const candidate = updatedAt + remainingSeconds * 1000;
+    const printChanged = etaEstimate.filename !== (print.filename || null);
+    const stateChanged = etaEstimate.state !== print.state;
+    const estimateChanged = !Number.isFinite(etaEstimate.timestamp) ||
+        Math.abs(candidate - etaEstimate.timestamp) >= ETA_UPDATE_THRESHOLD_MS;
+
+    if (printChanged || stateChanged || estimateChanged) {
+        etaEstimate = {
+            filename: print.filename || null,
+            state: print.state,
+            timestamp: candidate
+        };
+    }
+
+    return etaEstimate.timestamp;
 }
 
 // ---------------- SETTINGS ----------------
@@ -222,10 +253,9 @@ function updateUI(payload) {
         formatDuration(printer.print?.estimatedRemainingSeconds);
 
     const etaElem = document.getElementById('ReportedETA');
-    const remainingSeconds = printer.print?.estimatedRemainingSeconds;
-    const updatedAt = printer.updatedAt ? new Date(printer.updatedAt).getTime() : Date.now();
-    etaElem.textContent = Number.isFinite(remainingSeconds) && remainingSeconds > 0
-        ? formatClockTime(new Date(updatedAt + remainingSeconds * 1000))
+    const etaTimestamp = getStableEtaTimestamp(printer);
+    etaElem.textContent = Number.isFinite(etaTimestamp)
+        ? formatClockTime(new Date(etaTimestamp))
         : '-';
 
     // Layer info

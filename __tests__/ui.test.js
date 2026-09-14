@@ -174,6 +174,49 @@ describe('UI and Client Tests', () => {
         expect(document.getElementById('ReportedETA').textContent).not.toBe('-');
     });
 
+    test('ETA remains stable across minor status timing jitter', () => {
+        etaEstimate = { filename: null, state: null, timestamp: null };
+        const payload = {
+            printer: {
+                print: {
+                    state: 'printing',
+                    filename: 'part.gcode',
+                    estimatedRemainingSeconds: 600
+                },
+                updatedAt: '2026-01-03T12:00:30.000Z'
+            }
+        };
+
+        updateUI(payload);
+        const initialEta = document.getElementById('ReportedETA').textContent;
+
+        payload.printer.updatedAt = '2026-01-03T12:01:09.000Z';
+        updateUI(payload);
+
+        expect(document.getElementById('ReportedETA').textContent).toBe(initialEta);
+    });
+
+    test('ETA updates after a meaningful estimate change', () => {
+        etaEstimate = { filename: null, state: null, timestamp: null };
+        const payload = {
+            printer: {
+                print: {
+                    state: 'printing',
+                    filename: 'part.gcode',
+                    estimatedRemainingSeconds: 600
+                },
+                updatedAt: '2026-01-03T12:00:00.000Z'
+            }
+        };
+
+        const initialEta = getStableEtaTimestamp(payload.printer);
+
+        payload.printer.print.estimatedRemainingSeconds = 720;
+        const updatedEta = getStableEtaTimestamp(payload.printer);
+
+        expect(updatedEta - initialEta).toBe(120000);
+    });
+
     test('UI updates periodically', () => {
         // Trigger DOMContentLoaded
         document.dispatchEvent(new Event('DOMContentLoaded'));
