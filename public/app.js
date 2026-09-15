@@ -2,8 +2,7 @@
 let ws = null;
 let reconnectInterval = null;
 let cameraInitialized = false;
-let activeCameraMode = null;
-let adaptiveCameraPlayer = null;
+let cameraRestartTimer = null;
 let lastPayload = null;
 let toastIdCounter = 0;
 let etaEstimate = { filename: null, state: null, timestamp: null };
@@ -63,39 +62,27 @@ function getStableEtaTimestamp(printer) {
 }
 
 function stopCameraPlayer(cameraVideo) {
-    const hadSource = cameraVideo.hasAttribute('src') || adaptiveCameraPlayer;
-    if (adaptiveCameraPlayer?.destroy) adaptiveCameraPlayer.destroy();
-    else if (adaptiveCameraPlayer?.reset) adaptiveCameraPlayer.reset();
-    adaptiveCameraPlayer = null;
+    const hadSource = cameraVideo.hasAttribute('src');
+    if (cameraRestartTimer) clearTimeout(cameraRestartTimer);
+    cameraRestartTimer = null;
     cameraVideo.removeAttribute('src');
     if (hadSource) cameraVideo.load?.();
 }
 
-function startCameraPlayer(cameraVideo, mode) {
+function scheduleCameraRestart(cameraVideo, intervalSeconds) {
+    if (!intervalSeconds) return;
+    const delay = Math.max(1000, intervalSeconds * 1000 - 1000);
+    cameraRestartTimer = setTimeout(() => {
+        startCameraPlayer(cameraVideo, true);
+        scheduleCameraRestart(cameraVideo, intervalSeconds);
+    }, delay);
+}
+
+function startCameraPlayer(cameraVideo, restarting = false) {
     stopCameraPlayer(cameraVideo);
-    activeCameraMode = mode;
-
-    if (mode === 'hls') {
-        const source = '/api/camera/video/manifest.m3u8';
-        if (cameraVideo.canPlayType('application/vnd.apple.mpegurl')) {
-            cameraVideo.src = source;
-        } else if (window.Hls?.isSupported()) {
-            adaptiveCameraPlayer = new window.Hls();
-            adaptiveCameraPlayer.loadSource(source);
-            adaptiveCameraPlayer.attachMedia(cameraVideo);
-        }
-        return;
-    }
-
-    if (mode === 'dash') {
-        adaptiveCameraPlayer = window.dashjs?.MediaPlayer().create();
-        adaptiveCameraPlayer?.initialize(cameraVideo, '/api/camera/video/manifest.mpd', true);
-        return;
-    }
-
-    cameraVideo.src = mode === 'h264' || mode === 'h265'
-        ? '/api/camera/video/stream.mp4'
-        : '/api/camera/video/source';
+    cameraVideo.src = restarting
+        ? `/api/camera/video?restart=${Date.now()}`
+        : '/api/camera/video';
 }
 
 // ---------------- WEBSOCKET ----------------
@@ -290,33 +277,23 @@ function updateUI(payload) {
 
     // ---------------- CAMERA LOGIC ----------------
 
-    const cameraFeed = document.getElementById('cameraFeed');
     const cameraVideo = document.getElementById('cameraVideo');
     const cameraPlaceholder = document.getElementById('cameraPlaceholder');
     const cameraPlaceholderLabel = cameraPlaceholder.querySelector('span') || cameraPlaceholder;
 
     if (printer.camera?.available) {
-        const usesVideoElement = ['video', 'hls', 'dash', 'h264', 'h265'].includes(printer.camera.mode);
-        if (!cameraInitialized || activeCameraMode !== printer.camera.mode) {
-            if (usesVideoElement) {
-                startCameraPlayer(cameraVideo, printer.camera.mode);
-            } else {
-                stopCameraPlayer(cameraVideo);
-                cameraFeed.src = '/api/camera';
-                activeCameraMode = printer.camera.mode;
-            }
+        if (!cameraInitialized) {
+            startCameraPlayer(cameraVideo);
+            scheduleCameraRestart(cameraVideo, printer.camera.restartIntervalSeconds);
             cameraInitialized = true;
         }
-        cameraFeed.style.display = usesVideoElement ? 'none' : 'block';
-        cameraVideo.style.display = usesVideoElement ? 'block' : 'none';
+        cameraVideo.style.display = 'block';
         cameraPlaceholder.style.display = 'none';
     } else {
-        cameraFeed.style.display = 'none';
         cameraVideo.style.display = 'none';
         stopCameraPlayer(cameraVideo);
         cameraPlaceholder.style.display = 'flex';
         cameraInitialized = false;
-        activeCameraMode = null;
         const message = printer.camera?.error || 'No camera feed available';
         if (cameraPlaceholderLabel) {
             cameraPlaceholderLabel.textContent = message;

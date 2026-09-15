@@ -45,6 +45,7 @@ describe('UI and Client Tests', () => {
     beforeAll(() => {
         originalConsoleLog = console.log;
         console.log = jest.fn();
+        HTMLMediaElement.prototype.load = jest.fn();
         jest.useFakeTimers();
     });
 
@@ -56,8 +57,6 @@ describe('UI and Client Tests', () => {
     beforeEach(() => {
         document.documentElement.innerHTML = html;
         localStorage.clear();
-        delete window.Hls;
-        delete window.dashjs;
         // Reset mocks
         jest.clearAllMocks();
         
@@ -229,15 +228,37 @@ describe('UI and Client Tests', () => {
         };
         
         updateUI(payload);
-        const cameraFeed = document.getElementById('cameraFeed');
-        expect(cameraFeed.style.display).toBe('block');
-        expect(cameraFeed.src).toContain('/api/camera');
+        const cameraVideo = document.getElementById('cameraVideo');
+        expect(cameraVideo.style.display).toBe('block');
+        expect(cameraVideo.src).toContain('/api/camera/video');
         
         // Camera remains live while idle.
         payload.printer.print.state = 'standby';
         updateUI(payload);
-        expect(cameraFeed.style.display).toBe('block');
-        expect(cameraFeed.src).toContain('/api/camera');
+        expect(cameraVideo.style.display).toBe('block');
+        expect(cameraVideo.src).toContain('/api/camera/video');
+    });
+
+    test('reopens an MJPEG camera before the configured proxy limit', () => {
+        const payload = {
+            printer: {
+                connected: true,
+                print: { state: 'printing' },
+                camera: {
+                    available: true,
+                    mode: 'mjpeg',
+                    error: null,
+                    restartIntervalSeconds: 2
+                }
+            }
+        };
+        lastPayload = payload;
+        updateUI(payload);
+
+        const cameraVideo = document.getElementById('cameraVideo');
+        expect(cameraVideo.src).not.toContain('?restart=');
+        jest.advanceTimersByTime(1000);
+        expect(cameraVideo.src).toContain('/api/camera/video?restart=');
     });
 
     test('uses the video element for compressed camera streams', () => {
@@ -249,57 +270,7 @@ describe('UI and Client Tests', () => {
             }
         });
 
-        expect(document.getElementById('cameraFeed').style.display).toBe('none');
         expect(document.getElementById('cameraVideo').style.display).toBe('block');
         expect(document.getElementById('cameraVideo').src).toContain('/api/camera/video');
-    });
-
-    test.each(['h264', 'h265'])('uses FFmpeg MP4 output for raw %s streams', (mode) => {
-        updateUI({
-            printer: {
-                connected: true,
-                print: { state: 'printing' },
-                camera: { available: true, mode, error: null }
-            }
-        });
-
-        expect(document.getElementById('cameraVideo').src).toContain('/api/camera/video/stream.mp4');
-    });
-
-    test('uses Hls.js for HLS camera streams', () => {
-        const player = { loadSource: jest.fn(), attachMedia: jest.fn(), destroy: jest.fn() };
-        window.Hls = jest.fn(() => player);
-        window.Hls.isSupported = () => true;
-        HTMLVideoElement.prototype.canPlayType = jest.fn(() => '');
-
-        updateUI({
-            printer: {
-                connected: true,
-                print: { state: 'printing' },
-                camera: { available: true, mode: 'hls', error: null }
-            }
-        });
-
-        expect(player.loadSource).toHaveBeenCalledWith('/api/camera/video/manifest.m3u8');
-        expect(player.attachMedia).toHaveBeenCalledWith(document.getElementById('cameraVideo'));
-    });
-
-    test('uses dash.js for DASH camera streams', () => {
-        const player = { initialize: jest.fn(), reset: jest.fn() };
-        window.dashjs = { MediaPlayer: () => ({ create: () => player }) };
-
-        updateUI({
-            printer: {
-                connected: true,
-                print: { state: 'printing' },
-                camera: { available: true, mode: 'dash', error: null }
-            }
-        });
-
-        expect(player.initialize).toHaveBeenCalledWith(
-            document.getElementById('cameraVideo'),
-            '/api/camera/video/manifest.mpd',
-            true
-        );
     });
 });
