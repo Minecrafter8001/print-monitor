@@ -185,7 +185,7 @@ function streamNormalizedCamera(req, res) {
   const args = [
     '-hide_banner', '-loglevel', 'error', ...inputArgs, '-an',
     '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
-    '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'zerolatency',
+    '-c:v', 'libx264', '-profile:v', 'high', '-preset', 'veryfast', '-tune', 'zerolatency',
     '-pix_fmt', 'yuv420p', '-g', String(inputFPS * 2), '-keyint_min', String(inputFPS * 2), '-sc_threshold', '0',
     '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
     '-flush_packets', '1', '-f', 'mp4', 'pipe:1'
@@ -214,7 +214,7 @@ function streamNormalizedCamera(req, res) {
   } catch (_) {}
   updateUserStatsAndBroadcast();
 
-  res.setHeader('Content-Type', 'video/mp4');
+  res.setHeader('Content-Type', 'video/mp4; codecs="avc1.640028"');
   res.setHeader('Cache-Control', 'no-cache, no-store, no-transform');
   res.setHeader('X-Accel-Buffering', 'no');
   res.setHeader('Content-Encoding', 'identity');
@@ -697,7 +697,12 @@ async function pollCameraSnapshot() {
     resetCameraFailureTracker();
   } catch (err) {
     console.warn('Camera snapshot poll failed:', err.message);
-    printerStatus.camera = { available: false, error: err.message, mode: 'snapshot' };
+    printerStatus.camera = {
+      available: Boolean(latestFrame),
+      error: err.message,
+      mode: 'snapshot',
+      contentType: printerStatus.camera.contentType || 'image/jpeg'
+    };
   }
 }
 

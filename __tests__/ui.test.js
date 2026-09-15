@@ -46,6 +46,7 @@ describe('UI and Client Tests', () => {
         originalConsoleLog = console.log;
         console.log = jest.fn();
         HTMLMediaElement.prototype.load = jest.fn();
+        HTMLMediaElement.prototype.play = jest.fn(() => Promise.resolve());
         jest.useFakeTimers();
     });
 
@@ -273,5 +274,68 @@ describe('UI and Client Tests', () => {
 
         expect(document.getElementById('cameraVideo').style.display).toBe('block');
         expect(document.getElementById('cameraVideo').src).toContain('/api/camera/video');
+    });
+
+    test('appends camera chunks through Media Source for low-latency playback', async () => {
+        const originalMediaSource = window.MediaSource;
+        const originalFetch = window.fetch;
+        const originalCreateObjectURL = window.URL.createObjectURL;
+        const originalRevokeObjectURL = window.URL.revokeObjectURL;
+        const sourceBuffer = new EventTarget();
+        let hasBufferedFrame = false;
+        sourceBuffer.buffered = {
+            get length() { return hasBufferedFrame ? 1 : 0; },
+            start: () => 0,
+            end: () => 1
+        };
+        sourceBuffer.appendBuffer = jest.fn(() => {
+            hasBufferedFrame = true;
+            queueMicrotask(() => sourceBuffer.dispatchEvent(new Event('updateend')));
+        });
+        sourceBuffer.remove = jest.fn(() => {
+            queueMicrotask(() => sourceBuffer.dispatchEvent(new Event('updateend')));
+        });
+
+        class MockMediaSource extends EventTarget {
+            static isTypeSupported = jest.fn(() => true);
+            addSourceBuffer = jest.fn(() => sourceBuffer);
+
+            constructor() {
+                super();
+                setTimeout(() => this.dispatchEvent(new Event('sourceopen')), 0);
+            }
+        }
+
+        window.MediaSource = MockMediaSource;
+        window.URL.createObjectURL = jest.fn(() => 'blob:camera-stream');
+        window.URL.revokeObjectURL = jest.fn();
+        window.fetch = jest.fn(() => Promise.resolve({
+            ok: true,
+            body: {
+                getReader: () => ({
+                    read: jest.fn()
+                        .mockResolvedValueOnce({ done: false, value: new Uint8Array([1, 2, 3]) })
+                        .mockReturnValue(new Promise(() => {}))
+                })
+            }
+        }));
+
+        const cameraVideo = document.getElementById('cameraVideo');
+        startCameraPlayer(cameraVideo);
+        jest.advanceTimersByTime(0);
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(cameraVideo.src).toBe('blob:camera-stream');
+        expect(window.fetch).toHaveBeenCalledWith('/api/camera/video', expect.objectContaining({ cache: 'no-store' }));
+        expect(sourceBuffer.appendBuffer).toHaveBeenCalledWith(new Uint8Array([1, 2, 3]));
+
+        stopCameraPlayer(cameraVideo);
+        window.MediaSource = originalMediaSource;
+        window.fetch = originalFetch;
+        window.URL.createObjectURL = originalCreateObjectURL;
+        window.URL.revokeObjectURL = originalRevokeObjectURL;
     });
 });

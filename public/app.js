@@ -3,10 +3,16 @@ let ws = null;
 let reconnectInterval = null;
 let cameraInitialized = false;
 let cameraRestartTimer = null;
+let cameraStreamAbortController = null;
+let cameraObjectURL = null;
+let cameraPlaybackGeneration = 0;
 let lastPayload = null;
 let toastIdCounter = 0;
 let etaEstimate = { filename: null, state: null, timestamp: null };
 const ETA_UPDATE_THRESHOLD_MS = 60000;
+const CAMERA_MIME_TYPE = 'video/mp4; codecs="avc1.640028"';
+const CAMERA_MAX_BUFFER_SECONDS = 6;
+const CAMERA_LIVE_EDGE_DELAY_SECONDS = 0.5;
 
 // ---------------- TIME HELPERS ----------------
 
@@ -63,10 +69,15 @@ function getStableEtaTimestamp(printer) {
 
 function stopCameraPlayer(cameraVideo) {
     const hadSource = cameraVideo.hasAttribute('src');
+    cameraPlaybackGeneration += 1;
     if (cameraRestartTimer) clearTimeout(cameraRestartTimer);
     cameraRestartTimer = null;
+    cameraStreamAbortController?.abort();
+    cameraStreamAbortController = null;
     cameraVideo.removeAttribute('src');
     if (hadSource) cameraVideo.load?.();
+    if (cameraObjectURL) URL.revokeObjectURL(cameraObjectURL);
+    cameraObjectURL = null;
 }
 
 function scheduleCameraRestart(cameraVideo, intervalSeconds) {
@@ -78,11 +89,93 @@ function scheduleCameraRestart(cameraVideo, intervalSeconds) {
     }, delay);
 }
 
+function waitForSourceBuffer(sourceBuffer, operation) {
+    return new Promise((resolve, reject) => {
+        const cleanup = () => {
+            sourceBuffer.removeEventListener('updateend', handleUpdateEnd);
+            sourceBuffer.removeEventListener('error', handleError);
+        };
+        const handleUpdateEnd = () => {
+            cleanup();
+            resolve();
+        };
+        const handleError = () => {
+            cleanup();
+            reject(new Error('Camera media buffer failed'));
+        };
+        sourceBuffer.addEventListener('updateend', handleUpdateEnd, { once: true });
+        sourceBuffer.addEventListener('error', handleError, { once: true });
+        operation();
+    });
+}
+
+async function startMediaSourcePlayer(cameraVideo, streamURL, generation) {
+    const mediaSource = new MediaSource();
+    cameraObjectURL = URL.createObjectURL(mediaSource);
+    cameraVideo.src = cameraObjectURL;
+
+    await new Promise((resolve, reject) => {
+        mediaSource.addEventListener('sourceopen', resolve, { once: true });
+        mediaSource.addEventListener('error', reject, { once: true });
+    });
+    if (generation !== cameraPlaybackGeneration) return;
+
+    const sourceBuffer = mediaSource.addSourceBuffer(CAMERA_MIME_TYPE);
+    const abortController = new AbortController();
+    cameraStreamAbortController = abortController;
+    const response = await fetch(streamURL, { cache: 'no-store', signal: abortController.signal });
+    if (!response.ok || !response.body) throw new Error(`Camera stream error ${response.status}`);
+
+    const reader = response.body.getReader();
+    while (generation === cameraPlaybackGeneration) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        await waitForSourceBuffer(sourceBuffer, () => sourceBuffer.appendBuffer(value));
+
+        if (sourceBuffer.buffered.length) {
+            const start = sourceBuffer.buffered.start(0);
+            const end = sourceBuffer.buffered.end(sourceBuffer.buffered.length - 1);
+            if (end - start > CAMERA_MAX_BUFFER_SECONDS) {
+                await waitForSourceBuffer(sourceBuffer, () => {
+                    sourceBuffer.remove(start, end - CAMERA_MAX_BUFFER_SECONDS);
+                });
+            }
+            if (cameraVideo.currentTime < end - 2) {
+                cameraVideo.currentTime = Math.max(start, end - CAMERA_LIVE_EDGE_DELAY_SECONDS);
+            }
+            cameraVideo.play?.().catch(() => {});
+        }
+    }
+
+    if (generation === cameraPlaybackGeneration) {
+        throw new Error('Camera stream ended');
+    }
+}
+
 function startCameraPlayer(cameraVideo, restarting = false) {
     stopCameraPlayer(cameraVideo);
-    cameraVideo.src = restarting
+    const streamURL = restarting
         ? `/api/camera/video?restart=${Date.now()}`
         : '/api/camera/video';
+    const generation = cameraPlaybackGeneration;
+    const supportsMediaSource = typeof MediaSource !== 'undefined' &&
+        typeof fetch === 'function' && MediaSource.isTypeSupported?.(CAMERA_MIME_TYPE);
+
+    if (!supportsMediaSource) {
+        cameraVideo.src = streamURL;
+        return;
+    }
+
+    startMediaSourcePlayer(cameraVideo, streamURL, generation).catch((err) => {
+        if (err.name !== 'AbortError' && generation === cameraPlaybackGeneration) {
+            console.error('Camera stream playback failed:', err);
+            setTimeout(() => {
+                if (generation === cameraPlaybackGeneration && cameraInitialized) {
+                    startCameraPlayer(cameraVideo, true);
+                }
+            }, 1000);
+        }
+    });
 }
 
 // ---------------- WEBSOCKET ----------------
