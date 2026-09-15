@@ -231,6 +231,7 @@ describe('UI and Client Tests', () => {
         const cameraVideo = document.getElementById('cameraVideo');
         expect(cameraVideo.style.display).toBe('block');
         expect(cameraVideo.src).toContain('/api/camera/video');
+        expect(cameraVideo.hasAttribute('controls')).toBe(false);
         
         // Camera remains live while idle.
         payload.printer.print.state = 'standby';

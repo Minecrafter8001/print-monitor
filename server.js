@@ -180,7 +180,7 @@ function streamNormalizedCamera(req, res) {
     ? Math.max(1, Math.min(MAX_FPS, Math.round(1000 / CAMERA_SNAPSHOT_INTERVAL)))
     : MAX_FPS;
   const inputArgs = usesFrameInput
-    ? ['-use_wallclock_as_timestamps', '1', '-f', 'image2pipe', '-framerate', String(inputFPS), '-vcodec', 'mjpeg', '-i', 'pipe:0']
+    ? ['-probesize', '32', '-analyzeduration', '0', '-use_wallclock_as_timestamps', '1', '-f', 'image2pipe', '-framerate', String(inputFPS), '-vcodec', 'mjpeg', '-i', 'pipe:0']
     : [...(cameraMode === 'h264' ? ['-f', 'h264'] : cameraMode === 'h265' ? ['-f', 'hevc'] : []), '-i', cameraStreamURL];
   const args = [
     '-hide_banner', '-loglevel', 'error', ...inputArgs, '-an',
@@ -215,7 +215,10 @@ function streamNormalizedCamera(req, res) {
   updateUserStatsAndBroadcast();
 
   res.setHeader('Content-Type', 'video/mp4');
-  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Cache-Control', 'no-cache, no-store, no-transform');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.setHeader('Content-Encoding', 'identity');
+  res.flushHeaders();
   ffmpeg.stdout.pipe(res);
   ffmpeg.stderr.on('data', (chunk) => {
     stderr = (stderr + chunk.toString()).slice(-2000);
