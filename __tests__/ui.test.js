@@ -56,6 +56,8 @@ describe('UI and Client Tests', () => {
     beforeEach(() => {
         document.documentElement.innerHTML = html;
         localStorage.clear();
+        delete window.Hls;
+        delete window.dashjs;
         // Reset mocks
         jest.clearAllMocks();
         
@@ -141,21 +143,6 @@ describe('UI and Client Tests', () => {
         expect(document.getElementById('completedLayers').textContent).toBe('10');
         expect(document.getElementById('totalLayers').textContent).toBe('100');
         expect(document.getElementById('remainingLayers').textContent).toBe('90');
-    });
-
-    test('settings are loaded and saved', () => {
-        // Test default settings
-        expect(settings.pauseOnIdle).toBe(true);
-
-        // Test saving
-        settings.pauseOnIdle = false;
-        saveSettings();
-        expect(localStorage.setItem).toHaveBeenCalledWith('Settings', JSON.stringify({ pauseOnIdle: false }));
-
-        // Test loading
-        localStorage.getItem.mockReturnValue(JSON.stringify({ pauseOnIdle: true }));
-        const loaded = loadSettings();
-        expect(loaded.pauseOnIdle).toBe(true);
     });
 
     test('ETA is calculated from Moonraker metadata estimate', () => {
@@ -246,10 +233,73 @@ describe('UI and Client Tests', () => {
         expect(cameraFeed.style.display).toBe('block');
         expect(cameraFeed.src).toContain('/api/camera');
         
-        // If it becomes IDLE and pauseOnIdle is true
-        settings.pauseOnIdle = true;
+        // Camera remains live while idle.
         payload.printer.print.state = 'standby';
         updateUI(payload);
-        expect(document.getElementById('cameraOverlay').style.display).toBe('flex');
+        expect(cameraFeed.style.display).toBe('block');
+        expect(cameraFeed.src).toContain('/api/camera');
+    });
+
+    test('uses the video element for compressed camera streams', () => {
+        updateUI({
+            printer: {
+                connected: true,
+                print: { state: 'printing' },
+                camera: { available: true, mode: 'video', error: null }
+            }
+        });
+
+        expect(document.getElementById('cameraFeed').style.display).toBe('none');
+        expect(document.getElementById('cameraVideo').style.display).toBe('block');
+        expect(document.getElementById('cameraVideo').src).toContain('/api/camera/video');
+    });
+
+    test.each(['h264', 'h265'])('uses FFmpeg MP4 output for raw %s streams', (mode) => {
+        updateUI({
+            printer: {
+                connected: true,
+                print: { state: 'printing' },
+                camera: { available: true, mode, error: null }
+            }
+        });
+
+        expect(document.getElementById('cameraVideo').src).toContain('/api/camera/video/stream.mp4');
+    });
+
+    test('uses Hls.js for HLS camera streams', () => {
+        const player = { loadSource: jest.fn(), attachMedia: jest.fn(), destroy: jest.fn() };
+        window.Hls = jest.fn(() => player);
+        window.Hls.isSupported = () => true;
+        HTMLVideoElement.prototype.canPlayType = jest.fn(() => '');
+
+        updateUI({
+            printer: {
+                connected: true,
+                print: { state: 'printing' },
+                camera: { available: true, mode: 'hls', error: null }
+            }
+        });
+
+        expect(player.loadSource).toHaveBeenCalledWith('/api/camera/video/manifest.m3u8');
+        expect(player.attachMedia).toHaveBeenCalledWith(document.getElementById('cameraVideo'));
+    });
+
+    test('uses dash.js for DASH camera streams', () => {
+        const player = { initialize: jest.fn(), reset: jest.fn() };
+        window.dashjs = { MediaPlayer: () => ({ create: () => player }) };
+
+        updateUI({
+            printer: {
+                connected: true,
+                print: { state: 'printing' },
+                camera: { available: true, mode: 'dash', error: null }
+            }
+        });
+
+        expect(player.initialize).toHaveBeenCalledWith(
+            document.getElementById('cameraVideo'),
+            '/api/camera/video/manifest.mpd',
+            true
+        );
     });
 });

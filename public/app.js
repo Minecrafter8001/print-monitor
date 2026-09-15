@@ -2,19 +2,12 @@
 let ws = null;
 let reconnectInterval = null;
 let cameraInitialized = false;
-let snapshotTaken = false;
-let lastPrinterState = null;
+let activeCameraMode = null;
+let adaptiveCameraPlayer = null;
 let lastPayload = null;
 let toastIdCounter = 0;
 let etaEstimate = { filename: null, state: null, timestamp: null };
 const ETA_UPDATE_THRESHOLD_MS = 60000;
-
-// Settings object
-const defaultSettings = {
-    pauseOnIdle: true
-};
-
-let settings = loadSettings();
 
 // ---------------- TIME HELPERS ----------------
 
@@ -69,26 +62,40 @@ function getStableEtaTimestamp(printer) {
     return etaEstimate.timestamp;
 }
 
-// ---------------- SETTINGS ----------------
-
-function loadSettings() {
-    try {
-        const stored = localStorage.getItem('Settings');
-        if (stored) {
-            return { ...defaultSettings, ...JSON.parse(stored) };
-        }
-    } catch (err) {
-        console.error('Failed to load settings:', err);
-    }
-    return { ...defaultSettings };
+function stopCameraPlayer(cameraVideo) {
+    const hadSource = cameraVideo.hasAttribute('src') || adaptiveCameraPlayer;
+    if (adaptiveCameraPlayer?.destroy) adaptiveCameraPlayer.destroy();
+    else if (adaptiveCameraPlayer?.reset) adaptiveCameraPlayer.reset();
+    adaptiveCameraPlayer = null;
+    cameraVideo.removeAttribute('src');
+    if (hadSource) cameraVideo.load?.();
 }
 
-function saveSettings() {
-    try {
-        localStorage.setItem('Settings', JSON.stringify(settings));
-    } catch (err) {
-        console.error('Failed to save settings:', err);
+function startCameraPlayer(cameraVideo, mode) {
+    stopCameraPlayer(cameraVideo);
+    activeCameraMode = mode;
+
+    if (mode === 'hls') {
+        const source = '/api/camera/video/manifest.m3u8';
+        if (cameraVideo.canPlayType('application/vnd.apple.mpegurl')) {
+            cameraVideo.src = source;
+        } else if (window.Hls?.isSupported()) {
+            adaptiveCameraPlayer = new window.Hls();
+            adaptiveCameraPlayer.loadSource(source);
+            adaptiveCameraPlayer.attachMedia(cameraVideo);
+        }
+        return;
     }
+
+    if (mode === 'dash') {
+        adaptiveCameraPlayer = window.dashjs?.MediaPlayer().create();
+        adaptiveCameraPlayer?.initialize(cameraVideo, '/api/camera/video/manifest.mpd', true);
+        return;
+    }
+
+    cameraVideo.src = mode === 'h264' || mode === 'h265'
+        ? '/api/camera/video/stream.mp4'
+        : '/api/camera/video/source';
 }
 
 // ---------------- WEBSOCKET ----------------
@@ -281,51 +288,35 @@ function updateUI(payload) {
     document.getElementById('enclosureTemp').textContent = Math.round(temps.enclosure.current || 0);
     document.getElementById('enclosureTarget').textContent = Math.round(temps.enclosure.target || 0);
 
-    // ---------------- CAMERA LOGIC (UNCHANGED) ----------------
+    // ---------------- CAMERA LOGIC ----------------
 
     const cameraFeed = document.getElementById('cameraFeed');
+    const cameraVideo = document.getElementById('cameraVideo');
     const cameraPlaceholder = document.getElementById('cameraPlaceholder');
-    const cameraOverlay = document.getElementById('cameraOverlay');
     const cameraPlaceholderLabel = cameraPlaceholder.querySelector('span') || cameraPlaceholder;
 
-    lastPrinterState = printState;
-
     if (printer.camera?.available) {
-        const isIdle = printState === 'standby';
-        if (!cameraInitialized) {
-            cameraFeed.src = '/api/camera';
-            cameraInitialized = true;
-
-            cameraFeed.onload = function () {
-                if (!snapshotTaken && isIdle && settings.pauseOnIdle) {
-                    const canvas = document.createElement('canvas');
-                    canvas.width = cameraFeed.naturalWidth;
-                    canvas.height = cameraFeed.naturalHeight;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(cameraFeed, 0, 0);
-                    cameraFeed.src = canvas.toDataURL('image/jpeg');
-                    snapshotTaken = true;
-                    cameraFeed.onload = null;
-                }
-            };
-        }
-        if (isIdle && settings.pauseOnIdle) {
-            cameraOverlay.style.display = 'flex';
-        } else {
-            // Only reset src if we have a snapshot taken or if it's not set to the stream
-            if (snapshotTaken || !cameraFeed.src.includes('/api/camera')) {
-                snapshotTaken = false;
+        const usesVideoElement = ['video', 'hls', 'dash', 'h264', 'h265'].includes(printer.camera.mode);
+        if (!cameraInitialized || activeCameraMode !== printer.camera.mode) {
+            if (usesVideoElement) {
+                startCameraPlayer(cameraVideo, printer.camera.mode);
+            } else {
+                stopCameraPlayer(cameraVideo);
                 cameraFeed.src = '/api/camera';
+                activeCameraMode = printer.camera.mode;
             }
-            cameraOverlay.style.display = 'none';
+            cameraInitialized = true;
         }
-        cameraFeed.style.display = 'block';
+        cameraFeed.style.display = usesVideoElement ? 'none' : 'block';
+        cameraVideo.style.display = usesVideoElement ? 'block' : 'none';
         cameraPlaceholder.style.display = 'none';
     } else {
         cameraFeed.style.display = 'none';
+        cameraVideo.style.display = 'none';
+        stopCameraPlayer(cameraVideo);
         cameraPlaceholder.style.display = 'flex';
-        cameraOverlay.style.display = 'none';
         cameraInitialized = false;
+        activeCameraMode = null;
         const message = printer.camera?.error || 'No camera feed available';
         if (cameraPlaceholderLabel) {
             cameraPlaceholderLabel.textContent = message;
@@ -333,54 +324,7 @@ function updateUI(payload) {
     }
 }
 
-// ---------------- CAMERA TOGGLE ----------------
-
-function toggleCameraStream() {
-    const cameraFeed = document.getElementById('cameraFeed');
-    const cameraOverlay = document.getElementById('cameraOverlay');
-    const isIdle = lastPrinterState === 'standby';
-
-    if (!isIdle) return;
-
-    if (settings.pauseOnIdle) {
-        if (cameraFeed.style.display === 'block') {
-            if (!snapshotTaken) {
-                const canvas = document.createElement('canvas');
-                canvas.width = cameraFeed.naturalWidth;
-                canvas.height = cameraFeed.naturalHeight;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(cameraFeed, 0, 0);
-                cameraFeed.src = canvas.toDataURL('image/jpeg');
-                snapshotTaken = true;
-            }
-        }
-        cameraOverlay.style.display = 'flex';
-    } else {
-        snapshotTaken = false;
-        if (cameraFeed.style.display === 'block') {
-            cameraFeed.src = '/api/camera';
-        }
-        cameraOverlay.style.display = 'none';
-    }
-}
-
 // ---------------- INIT ----------------
-
-function initPauseOnIdleButton() {
-    const btn = document.getElementById('pauseOnIdleBtn');
-
-    if (settings.pauseOnIdle) {
-        btn.classList.add('active');
-    }
-
-    btn.addEventListener('click', () => {
-        settings.pauseOnIdle = !settings.pauseOnIdle;
-        saveSettings();
-
-        btn.classList.toggle('active', settings.pauseOnIdle);
-        toggleCameraStream();
-    });
-}
 
 function showToast({ title, body, hint, duration = 15000 }) {
     const container = document.getElementById('toastContainer');
@@ -432,7 +376,6 @@ function dismissToast(card, container) {
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Snapmaker Moonraker Print Monitor starting...');
-    initPauseOnIdleButton();
     connectWebSocket();
 
     // Update UI every second to keep clock and other elements fresh

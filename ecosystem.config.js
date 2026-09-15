@@ -14,9 +14,17 @@ module.exports = {
         DEBUG_DISABLE_LOCAL_IP_FILTER: 'false',
         ENABLE_DEBUG_ENDPOINTS: 'false',
         WS_UPDATE_INTERVAL: 250,
-        MOONRAKER_URL: process.env.MOONRAKER_URL || '',
-        MOONRAKER_API_KEY: process.env.MOONRAKER_API_KEY || '',
-        CAMERA_STREAM_URL: process.env.CAMERA_STREAM_URL || ''
+        MOONRAKER_URL: '',
+        MOONRAKER_API_KEY: '',
+        CAMERA_STREAM_URL: '',
+        CAMERA_MODE: 'auto',
+        CAMERA_RESOURCE_ORIGINS: '',
+        FFMPEG_PATH: '',
+        CAMERA_SNAPSHOT_URL: '',
+        CAMERA_SNAPSHOT_INTERVAL: '1000',
+        CAMERA_KEEPALIVE_URL: '',
+        CAMERA_KEEPALIVE_TOKEN: '',
+        CAMERA_KEEPALIVE_INTERVAL: '10'
       }
     }
   ]

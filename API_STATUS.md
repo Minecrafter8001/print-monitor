@@ -50,7 +50,7 @@ Returns the current Moonraker-derived status and browser/camera usage counters.
         }
       ]
     },
-    "camera": { "available": true, "error": null },
+    "camera": { "available": true, "error": null, "mode": "mjpeg", "contentType": "multipart/x-mixed-replace" },
     "updatedAt": "2026-09-12T12:34:56.789Z"
   },
   "users": {
@@ -70,7 +70,11 @@ Each tool's `filament` prefers Snapmaker RFID data from `filament_detect`. When 
 
 ## `GET /api/camera`
 
-Returns a `multipart/x-mixed-replace` MJPEG stream relayed from the first enabled Moonraker webcam, or from `CAMERA_STREAM_URL` when configured.
+Returns a `multipart/x-mixed-replace` stream containing frames from an MJPEG source or a polled snapshot camera.
+
+## `GET /api/camera/video`
+
+Provides the configured compressed stream. Direct MP4/WebM is proxied with range headers, HLS/DASH manifests and resources are proxied for their browser players, raw H.264 is remuxed to fragmented MP4, and raw H.265 is transcoded to H.264 fragmented MP4 through the bundled FFmpeg binary.
 
 ## `GET /api/admin`
 

@@ -8,10 +8,13 @@ const DEBUG_DISABLE_LOCAL_IP_FILTER =
 const ENABLE_DEBUG_ENDPOINTS = process.env.ENABLE_DEBUG_ENDPOINTS === 'true';
 const express = require('express');
 const http = require('http');
+const { spawn } = require('child_process');
 const WebSocket = require('ws');
+const ffmpegPath = process.env.FFMPEG_PATH || require('ffmpeg-static');
 require('utils/logger');
 const { getClientIP, isLocalIP } = require('utils/ip-utils');
 const { mapMoonrakerStatus } = require('utils/moonraker-status');
+const { detectCameraMode, isManifestType, rewriteCameraManifest } = require('utils/camera-stream-utils');
 const UserStats = require('utils/user-stats');
 
 const MoonrakerClient = require('utils/moonraker-client');
@@ -28,6 +31,13 @@ const WS_UPDATE_INTERVAL = (() => {
   return Number.isFinite(value) && value > 0 ? value : 1000;
 })();
 const CAMERA_MAX_START_FAILURES = 3;
+const CAMERA_MODE = (process.env.CAMERA_MODE || 'auto').toLowerCase();
+const CAMERA_SNAPSHOT_URL = process.env.CAMERA_SNAPSHOT_URL || '';
+const CAMERA_KEEPALIVE_TOKEN = process.env.CAMERA_KEEPALIVE_TOKEN || '';
+const CAMERA_KEEPALIVE_INTERVAL = Math.max(5, Number.parseInt(process.env.CAMERA_KEEPALIVE_INTERVAL, 10) || 10) * 1000;
+const CAMERA_SNAPSHOT_INTERVAL = Math.max(250, Number.parseInt(process.env.CAMERA_SNAPSHOT_INTERVAL, 10) || 1000);
+const CAMERA_RESOURCE_ORIGINS = (process.env.CAMERA_RESOURCE_ORIGINS || '').split(',').map((origin) => origin.trim()).filter(Boolean);
+const COMPRESSED_CAMERA_MODES = new Set(['video', 'hls', 'dash', 'h264', 'h265']);
 
 // Store printer data
 let printerClient = null;
@@ -54,7 +64,8 @@ const defaultPrinterStatus = {
   },
   camera: {
     available: false,
-    error: null
+    error: null,
+    mode: null
   },
   updatedAt: null
 };
@@ -68,10 +79,14 @@ const webClients = new Set();
 
 // Camera stream
 let cameraStreamURL = null;
+let cameraMode = null;
 let printerStream = null;
+let cameraAbortController = null;
+let cameraPollTimer = null;
+let cameraKeepaliveTimer = null;
 const cameraSubscribers = new Set(); // Clients subscribed to camera stream
 let latestFrame = null;
-const cameraContentType = 'image/jpeg';
+let cameraContentType = 'image/jpeg';
 let cameraStartFailure = { lastError: null, count: 0 };
 
 const userStats = new UserStats();
@@ -122,6 +137,8 @@ function buildStatusPayload() {
 
 // Serve static files
 app.use(express.static('public'));
+app.get('/vendor/hls.min.js', (req, res) => res.sendFile(require.resolve('hls.js/dist/hls.min.js')));
+app.get('/vendor/dash.all.min.js', (req, res) => res.sendFile(require.resolve('dashjs')));
 
 // API endpoint to get current printer status
 app.get('/api/status', (req, res) => {
@@ -172,6 +189,106 @@ app.get('/api/camera', async (req, res) => {
   req.on('error', cleanup);
   res.on('error', cleanup);
 });
+
+app.get('/api/camera/video/resource', async (req, res) => {
+  if (!cameraStreamURL || !COMPRESSED_CAMERA_MODES.has(cameraMode)) {
+    return res.status(404).send('Compressed camera stream is not available');
+  }
+
+  try {
+    const targetURL = new URL(req.query.url).toString();
+    const allowedOrigins = new Set([new URL(cameraStreamURL).origin, ...CAMERA_RESOURCE_ORIGINS]);
+    if (!allowedOrigins.has(new URL(targetURL).origin)) {
+      return res.status(403).send('Camera resource origin is not allowed');
+    }
+    await proxyCameraResource(req, res, targetURL);
+  } catch (err) {
+    res.status(400).send(`Invalid camera resource: ${err.message}`);
+  }
+});
+
+app.get(['/api/camera/video', '/api/camera/video/:entry'], async (req, res) => {
+  if (!cameraStreamURL || !COMPRESSED_CAMERA_MODES.has(cameraMode)) {
+    return res.status(404).send('Compressed camera stream is not available');
+  }
+
+  if (cameraMode === 'h264' || cameraMode === 'h265') {
+    return streamRawCamera(req, res);
+  }
+
+  await proxyCameraResource(req, res, cameraStreamURL);
+});
+
+async function proxyCameraResource(req, res, targetURL) {
+  try {
+    const headers = {};
+    if (req.headers.range) headers.Range = req.headers.range;
+    const upstream = await fetch(targetURL, { headers });
+    const contentType = upstream.headers.get('content-type') || '';
+    res.status(upstream.status);
+    for (const header of ['content-type', 'content-length', 'content-range', 'accept-ranges', 'cache-control']) {
+      const value = upstream.headers.get(header);
+      if (value) res.setHeader(header, value);
+    }
+
+    if (isManifestType(contentType, targetURL)) {
+      const manifest = await upstream.text();
+      const rewritten = rewriteCameraManifest(manifest, targetURL, contentType);
+      res.removeHeader('content-length');
+      return res.send(rewritten);
+    }
+
+    if (!upstream.body) return res.end();
+    const reader = upstream.body.getReader();
+    req.on('close', () => reader.cancel().catch(() => {}));
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!res.write(Buffer.from(value))) {
+        await new Promise((resolve) => res.once('drain', resolve));
+      }
+    }
+    res.end();
+  } catch (err) {
+    if (!res.headersSent) res.status(502).send(`Camera proxy error: ${err.message}`);
+    else res.destroy(err);
+  }
+}
+
+function streamRawCamera(req, res) {
+  const inputFormat = cameraMode === 'h265' ? 'hevc' : 'h264';
+  const codecArgs = cameraMode === 'h265'
+    ? ['-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'zerolatency']
+    : ['-c:v', 'copy'];
+  const args = [
+    '-hide_banner', '-loglevel', 'error', '-fflags', '+genpts',
+    '-f', inputFormat, '-i', cameraStreamURL, '-an', ...codecArgs,
+    '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
+    '-f', 'mp4', 'pipe:1'
+  ];
+  const ffmpeg = spawn(ffmpegPath, args, { windowsHide: true });
+  let stderr = '';
+
+  res.setHeader('Content-Type', 'video/mp4');
+  res.setHeader('Cache-Control', 'no-store');
+  ffmpeg.stdout.pipe(res);
+  ffmpeg.stderr.on('data', (chunk) => {
+    stderr = (stderr + chunk.toString()).slice(-2000);
+  });
+  ffmpeg.once('error', (err) => {
+    if (!res.headersSent) res.status(502).send(`FFmpeg camera error: ${err.message}`);
+    else res.destroy(err);
+  });
+  ffmpeg.once('close', (code) => {
+    if (code && !res.destroyed) {
+      console.warn(`FFmpeg camera process exited with code ${code}: ${stderr.trim()}`);
+      res.end();
+    }
+  });
+  res.once('close', () => {
+    if (!ffmpeg.killed) ffmpeg.kill();
+  });
+}
 
 // Debug endpoint to trigger a controlled restart (local-only, flag-gated)
 if (ENABLE_DEBUG_ENDPOINTS) {
@@ -348,19 +465,24 @@ async function setupCameraURL() {
   if (!printerClient) return;
 
   try {
-    const webcamResponse = await printerClient.getWebcams();
-    const webcam = webcamResponse.webcams?.find((entry) => entry.enabled && entry.stream_url);
     const configuredURL = process.env.CAMERA_STREAM_URL;
-    const streamURL = configuredURL || webcam?.stream_url;
+    let webcam = null;
+    if (!CAMERA_SNAPSHOT_URL && !configuredURL) {
+      const webcamResponse = await printerClient.getWebcams();
+      webcam = webcamResponse.webcams?.find((entry) => entry.enabled && (entry.stream_url || entry.snapshot_url));
+    }
+    const streamURL = CAMERA_SNAPSHOT_URL || configuredURL || webcam?.stream_url || webcam?.snapshot_url;
     if (!streamURL) throw new Error('No enabled Moonraker webcam found');
 
     cameraStreamURL = printerClient.resolveURL(streamURL);
-    printerStatus.camera = { available: true, error: null };
+    cameraMode = CAMERA_MODE === 'snapshot' || CAMERA_SNAPSHOT_URL ? 'snapshot' : CAMERA_MODE;
+    printerStatus.camera = { available: true, error: null, mode: cameraMode };
     console.log(`Camera stream enabled: ${cameraStreamURL}`);
   } catch (err) {
     console.warn('Failed to setup camera:', err.message);
-    printerStatus.camera = { available: false, error: err.message };
+    printerStatus.camera = { available: false, error: err.message, mode: null };
     cameraStreamURL = null;
+    cameraMode = null;
   }
 }
 
@@ -440,28 +562,57 @@ async function connectToPrinter(moonrakerURL, printerName = null) {
  * Start persistent camera stream from printer and relay to clients
  */
 async function startCameraStreaming() {
+  stopCameraStreaming();
   if (!cameraStreamURL) {
     printerStatus.camera = {
       available: false,
-      error: printerStatus.camera.error || 'Camera not available'
+      error: printerStatus.camera.error || 'Camera not available',
+      mode: null
     };
     broadcastToClients({ type: 'status', data: buildStatusPayload() });
     resetCameraFailureTracker();
     return;
   }
 
+  if (cameraMode === 'snapshot') {
+    startCameraKeepalive();
+    await pollCameraSnapshot();
+    cameraPollTimer = setInterval(pollCameraSnapshot, CAMERA_SNAPSHOT_INTERVAL);
+    cameraPollTimer.unref?.();
+    return;
+  }
+
   try {
-    const response = await fetch(cameraStreamURL);
+    cameraAbortController = new AbortController();
+    const response = await fetch(cameraStreamURL, { signal: cameraAbortController.signal });
     
     if (!response.ok) {
       throw new Error(`Camera error ${response.status}, ${response.statusText}`);
     }
 
     resetCameraFailureTracker();
-    printerStatus.camera = { available: true, error: null };
+    const contentType = response.headers.get('content-type') || '';
+    cameraMode = detectCameraMode(cameraMode, contentType, cameraStreamURL);
+    if (COMPRESSED_CAMERA_MODES.has(cameraMode)) {
+      printerStatus.camera = { available: true, error: null, mode: cameraMode, contentType };
+      await response.body?.cancel();
+      broadcastToClients({ type: 'status', data: buildStatusPayload() });
+      return;
+    }
+    if (cameraMode === 'auto' && contentType.startsWith('image/')) {
+      cameraMode = 'snapshot';
+      await response.body?.cancel();
+      startCameraKeepalive();
+      await pollCameraSnapshot();
+      cameraPollTimer = setInterval(pollCameraSnapshot, CAMERA_SNAPSHOT_INTERVAL);
+      cameraPollTimer.unref?.();
+      return;
+    }
+    cameraMode = 'mjpeg';
+    cameraContentType = 'image/jpeg';
+    printerStatus.camera = { available: true, error: null, mode: 'mjpeg', contentType };
 
     // Extract boundary from multipart content-type header
-    const contentType = response.headers.get('content-type');
     const boundaryMatch = contentType?.match(/boundary=([^\s;]+)/);
     const boundary = boundaryMatch ? boundaryMatch[1].replace(/^-+/, '') : 'frame';
     const boundaryBuffer = Buffer.from('--' + boundary);
@@ -527,6 +678,7 @@ async function startCameraStreaming() {
           }
         }
       } catch (err) {
+        if (err.name === 'AbortError') return;
         console.error('Camera stream error:', err.message);
         handleCameraStartFailure(err.message);
         // Retry after a delay
@@ -540,8 +692,9 @@ async function startCameraStreaming() {
 
     printerStream = processStream();
   } catch (err) {
+    if (err.name === 'AbortError') return;
     console.error('Failed to start camera stream:', err.message);
-    printerStatus.camera = { available: false, error: err.message };
+    printerStatus.camera = { available: false, error: err.message, mode: cameraMode };
     broadcastToClients({ type: 'status', data: buildStatusPayload() });
     handleCameraStartFailure(err.message);
     // Retry after a delay
@@ -557,7 +710,60 @@ async function startCameraStreaming() {
  * Stop camera streaming
  */
 function stopCameraStreaming() {
+  cameraAbortController?.abort();
+  cameraAbortController = null;
   printerStream = null;
+  if (cameraPollTimer) clearInterval(cameraPollTimer);
+  if (cameraKeepaliveTimer) clearInterval(cameraKeepaliveTimer);
+  cameraPollTimer = null;
+  cameraKeepaliveTimer = null;
+}
+
+function broadcastCameraFrame(frame) {
+  latestFrame = frame;
+  cameraSubscribers.forEach((subscriber) => subscriber(latestFrame));
+}
+
+async function pollCameraSnapshot() {
+  try {
+    const response = await fetch(cameraStreamURL, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`Camera snapshot error ${response.status}`);
+    const contentType = response.headers.get('content-type') || 'image/jpeg';
+    if (!contentType.startsWith('image/')) throw new Error(`Expected camera image, received ${contentType}`);
+    cameraContentType = contentType.split(';')[0];
+    broadcastCameraFrame(Buffer.from(await response.arrayBuffer()));
+    printerStatus.camera = { available: true, error: null, mode: 'snapshot', contentType };
+    resetCameraFailureTracker();
+  } catch (err) {
+    console.warn('Camera snapshot poll failed:', err.message);
+    printerStatus.camera = { available: false, error: err.message, mode: 'snapshot' };
+  }
+}
+
+function startCameraKeepalive() {
+  if (!CAMERA_KEEPALIVE_TOKEN || cameraKeepaliveTimer) return;
+  const protocol = printerClient.baseURL.protocol === 'https:' ? 'wss:' : 'ws:';
+  const keepaliveURL = new URL(
+    process.env.CAMERA_KEEPALIVE_URL || `${protocol}//${printerClient.baseURL.host}/websocket`
+  );
+  if (!keepaliveURL.searchParams.has('token')) {
+    keepaliveURL.searchParams.set('token', CAMERA_KEEPALIVE_TOKEN);
+  }
+  const wake = () => {
+    const socket = new WebSocket(keepaliveURL.toString(), { handshakeTimeout: 5000 });
+    socket.once('open', () => {
+      socket.send(JSON.stringify({
+        id: Date.now(),
+        jsonrpc: '2.0',
+        method: 'camera.start_monitor',
+        params: { domain: 'lan', interval: 0 }
+      }), () => socket.close());
+    });
+    socket.once('error', (err) => console.warn('Camera keepalive failed:', err.message));
+  };
+  wake();
+  cameraKeepaliveTimer = setInterval(wake, CAMERA_KEEPALIVE_INTERVAL);
+  cameraKeepaliveTimer.unref?.();
 }
 
 
