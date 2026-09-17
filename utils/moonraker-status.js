@@ -4,39 +4,55 @@ function getToolFriendlyName(objectName) {
   return `Toolhead ${nozzleIndex + 1}`;
 }
 
-function getMetadataValues(value) {
-  if (Array.isArray(value)) return value;
-  if (typeof value !== 'string') return [];
-  return value.split(';').map((entry) => entry.replace(/^"|"$/g, '').trim());
+function normalizeFilamentColor(value) {
+  if (typeof value === 'string') {
+    const hex = value.replace(/^#/, '').slice(0, 6);
+    return /^[0-9a-f]{6}$/i.test(hex) ? `#${hex.toUpperCase()}` : null;
+  }
+  if (Number.isFinite(value)) {
+    return `#${(value & 0xffffff).toString(16).padStart(6, '0').toUpperCase()}`;
+  }
+  return null;
 }
 
-const SNAPMAKER_RFID_INDEX_BY_TOOL = [0, 1, 2, 3];
-
-function getFilamentDetails(objects, metadata, toolIndex) {
-  const rfidIndex = SNAPMAKER_RFID_INDEX_BY_TOOL[toolIndex] ?? toolIndex;
-  const rfid = objects.filament_detect?.info?.[rfidIndex];
-  const rfidMaterial = rfid?.SUB_TYPE && rfid.SUB_TYPE !== 'NONE' ? rfid.SUB_TYPE : rfid?.MAIN_TYPE;
+function getFilamentDetails(objects, toolIndex) {
   const sensor = objects[`filament_motion_sensor e${toolIndex}_filament`] ||
     objects[`filament_switch_sensor e${toolIndex}_filament`];
+  const loaded = typeof sensor?.filament_detected === 'boolean' ? sensor.filament_detected : null;
+  const taskConfig = objects.print_task_config || {};
+  const taskType = taskConfig.filament_type?.[toolIndex];
+  const taskSubtype = taskConfig.filament_sub_type?.[toolIndex];
+  const taskMaterial = taskSubtype && taskSubtype !== 'NONE' ? taskSubtype : taskType;
+  const taskColor = normalizeFilamentColor(
+    taskConfig.filament_color_rgba?.[toolIndex] ?? taskConfig.filament_color?.[toolIndex]
+  );
 
-  if (rfidMaterial && rfidMaterial !== 'NONE') {
-    const rgb = Number(rfid.RGB_1 ?? rfid.ARGB_COLOR) & 0xffffff;
+  if ((taskMaterial && taskMaterial !== 'NONE') || taskColor) {
     return {
-      material: rfidMaterial,
-      color: `#${rgb.toString(16).padStart(6, '0').toUpperCase()}`,
-      source: 'rfid',
-      loaded: typeof sensor?.filament_detected === 'boolean' ? sensor.filament_detected : null
+      material: taskMaterial && taskMaterial !== 'NONE' ? taskMaterial : null,
+      color: taskColor,
+      source: 'printer',
+      loaded
     };
   }
 
-  const material = getMetadataValues(metadata.filament_type)[toolIndex] || null;
-  const colorValue = getMetadataValues(metadata.filament_colour)[toolIndex];
-  const color = /^#[0-9a-f]{6}$/i.test(colorValue || '') ? colorValue.toUpperCase() : null;
+  const rfid = objects.filament_detect?.info?.[toolIndex];
+  const rfidMaterial = rfid?.SUB_TYPE && rfid.SUB_TYPE !== 'NONE' ? rfid.SUB_TYPE : rfid?.MAIN_TYPE;
+
+  if (rfidMaterial && rfidMaterial !== 'NONE') {
+    return {
+      material: rfidMaterial,
+      color: normalizeFilamentColor(Number(rfid.RGB_1 ?? rfid.ARGB_COLOR)),
+      source: 'rfid',
+      loaded
+    };
+  }
+
   return {
-    material,
-    color,
-    source: material || color ? 'gcode' : null,
-    loaded: typeof sensor?.filament_detected === 'boolean' ? sensor.filament_detected : null
+    material: null,
+    color: null,
+    source: null,
+    loaded
   };
 }
 
@@ -102,7 +118,7 @@ function mapMoonrakerStatus(objects, metadata = {}) {
         current: Math.round(tool.temperature || 0),
         target: Math.round(tool.target || 0),
         active: name === activeToolEntry[0],
-        filament: getFilamentDetails(objects, metadata, index)
+        filament: getFilamentDetails(objects, index)
       }))
     },
     updatedAt: new Date().toISOString()

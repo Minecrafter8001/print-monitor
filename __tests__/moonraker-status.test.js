@@ -45,11 +45,11 @@ describe('mapMoonrakerStatus', () => {
         tools: [
           {
             name: 'extruder', friendlyName: 'Toolhead 1', current: 32, target: 0, active: false,
-            filament: { material: 'PETG', color: '#112233', source: 'gcode', loaded: true }
+            filament: { material: null, color: null, source: null, loaded: true }
           },
           {
             name: 'extruder1', friendlyName: 'Toolhead 2', current: 205, target: 210, active: true,
-            filament: { material: 'PLA', color: '#F8F81C', source: 'gcode', loaded: true }
+            filament: { material: null, color: null, source: null, loaded: true }
           }
         ]
       }
@@ -95,7 +95,7 @@ describe('mapMoonrakerStatus', () => {
     expect(getToolFriendlyName('extruder3')).toBe('Toolhead 4');
   });
 
-  test('prefers detected RFID filament details over slicer metadata', () => {
+  test('uses detected RFID filament details', () => {
     const result = mapMoonrakerStatus({
       extruder: { temperature: 20 },
       filament_detect: {
@@ -139,5 +139,42 @@ describe('mapMoonrakerStatus', () => {
       '#FF0000',
       '#000000'
     ]);
+  });
+
+  test('uses printer-managed physical toolhead filament assignments without RFID', () => {
+    const result = mapMoonrakerStatus({
+      extruder: { temperature: 20 },
+      extruder1: { temperature: 20 },
+      extruder2: { temperature: 20 },
+      extruder3: { temperature: 20 },
+      print_task_config: {
+        filament_type: ['PLA', 'PLA', 'PLA', 'PLA'],
+        filament_sub_type: ['SnapSpeed', 'SnapSpeed', '', 'SnapSpeed'],
+        filament_color_rgba: ['E72F1DFF', 'F8F81CFF', '8C9099FF', '000000FF']
+      }
+    });
+
+    expect(result.temperatures.tools.map(tool => tool.filament)).toEqual([
+      { material: 'SnapSpeed', color: '#E72F1D', source: 'printer', loaded: null },
+      { material: 'SnapSpeed', color: '#F8F81C', source: 'printer', loaded: null },
+      { material: 'PLA', color: '#8C9099', source: 'printer', loaded: null },
+      { material: 'SnapSpeed', color: '#000000', source: 'printer', loaded: null }
+    ]);
+  });
+
+  test('ignores G-code filament metadata without RFID data', () => {
+    const result = mapMoonrakerStatus({
+      extruder: { temperature: 20 },
+      extruder1: { temperature: 20 },
+      extruder2: { temperature: 20 },
+      extruder3: { temperature: 20 }
+    }, {
+      filament_type: 'PLA;PLA;PLA;PLA',
+      filament_colour: '#8C9099;#F8F81C;#E72F1D;#000000'
+    });
+
+    expect(result.temperatures.tools.map(tool => tool.filament)).toEqual(
+      Array(4).fill(null).map(() => ({ material: null, color: null, source: null, loaded: null }))
+    );
   });
 });
