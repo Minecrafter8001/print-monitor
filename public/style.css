@@ -570,6 +570,12 @@ body.menu-open {
     font-size: 0.85rem;
 }
 
+.timelapse-summary {
+    margin-top: 6px;
+    color: #c7d2e5;
+    font-size: 0.9rem;
+}
+
 .download-button {
     flex: 0 0 auto;
     padding: 9px 12px;

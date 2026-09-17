@@ -1,7 +1,21 @@
 (function initializeTimelapses(global) {
     const DOWNLOAD_CHUNK_SIZE = 16 * 1024 * 1024;
 
-    function createTimelapseController({ formatFileSize, showToast }) {
+    function createTimelapseController({ formatDuration, formatFileSize, showToast }) {
+        function formatStatus(status) {
+            if (!status) return 'Status unknown';
+            return status
+                .replaceAll('_', ' ')
+                .replace(/\b\w/g, character => character.toUpperCase());
+        }
+
+        function formatTimelapseDuration(seconds) {
+            if (Number.isFinite(seconds) && seconds > 0 && seconds < 10) {
+                return `${seconds.toFixed(1)}s`;
+            }
+            return formatDuration(seconds);
+        }
+
         async function download(timelapse, button) {
             if (!Number.isFinite(timelapse.size) || timelapse.size <= 0) {
                 throw new Error('Timelapse size is unavailable');
@@ -65,7 +79,12 @@
                 metadata.className = 'timelapse-metadata';
                 const modified = new Date(timelapse.modified * 1000);
                 metadata.textContent = `${modified.toLocaleString()} · ${formatFileSize(timelapse.size)}`;
-                details.append(name, metadata);
+                const summary = document.createElement('div');
+                summary.className = 'timelapse-summary';
+                summary.textContent = `${formatStatus(timelapse.printStatus)} · ` +
+                    `Print: ${formatDuration(timelapse.printDurationSeconds)} · ` +
+                    `Timelapse: ${formatTimelapseDuration(timelapse.timelapseDurationSeconds)}`;
+                details.append(name, metadata, summary);
 
                 const downloadButton = document.createElement('button');
                 downloadButton.className = 'download-button';

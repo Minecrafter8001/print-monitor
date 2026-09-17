@@ -19,7 +19,8 @@ const { detectCameraMode } = require('modules/camera-stream-utils');
 const {
   buildTimelapseList,
   encodeMoonrakerFilePath,
-  isSafeTimelapsePath
+  isSafeTimelapsePath,
+  parseMp4Duration
 } = require('modules/timelapse-utils');
 const UserStats = require('modules/user-stats');
 
@@ -47,6 +48,7 @@ const CAMERA_STREAM_RESTART_INTERVAL = (() => {
   return (Number.isFinite(seconds) && seconds >= 0 ? seconds : 300) * 1000;
 })();
 const COMPRESSED_CAMERA_MODES = new Set(['video', 'hls', 'dash', 'h264', 'h265']);
+const TIMELAPSE_METADATA_BYTES = 256 * 1024;
 
 // Store printer data
 let printerClient = null;
@@ -97,6 +99,7 @@ let cameraStreamRestartTimer = null;
 const cameraSubscribers = new Set(); // Clients subscribed to camera stream
 let latestFrame = null;
 let cameraStartFailure = { lastError: null, count: 0 };
+const timelapseDurationCache = new Map();
 
 const userStats = new UserStats();
 
@@ -160,6 +163,28 @@ app.get('/api/status', (req, res) => {
   res.json(buildStatusPayload());
 });
 
+async function getTimelapseDuration(file) {
+  const cacheKey = `${file.path}:${file.modified}`;
+  if (timelapseDurationCache.has(cacheKey)) return timelapseDurationCache.get(cacheKey);
+
+  try {
+    const headers = { Range: `bytes=-${TIMELAPSE_METADATA_BYTES}` };
+    if (printerClient.apiKey) headers['X-Api-Key'] = printerClient.apiKey;
+    const response = await fetch(
+      printerClient.resolveURL(`/server/files/camera/${encodeMoonrakerFilePath(file.path)}`),
+      { headers }
+    );
+    if (!response.ok) return null;
+
+    const duration = parseMp4Duration(Buffer.from(await response.arrayBuffer()));
+    timelapseDurationCache.set(cacheKey, duration);
+    return duration;
+  } catch (error) {
+    console.warn(`Failed to read timelapse duration for ${file.path}:`, error.message);
+    return null;
+  }
+}
+
 app.get('/api/timelapses', async (req, res) => {
   if (!printerClient?.connected) {
     return res.status(503).json({ error: 'Printer is not connected' });
@@ -167,7 +192,16 @@ app.get('/api/timelapses', async (req, res) => {
 
   try {
     const files = await printerClient.listFiles('camera');
-    res.json({ timelapses: buildTimelapseList(files) });
+    const history = await printerClient.getHistory().catch(error => {
+      console.warn('Failed to retrieve print history:', error.message);
+      return { jobs: [] };
+    });
+    const historyJobs = Array.isArray(history) ? history : history.jobs || [];
+    const timelapses = buildTimelapseList(files, historyJobs);
+    await Promise.all(timelapses.map(async timelapse => {
+      timelapse.timelapseDurationSeconds = await getTimelapseDuration(timelapse);
+    }));
+    res.json({ timelapses });
   } catch (error) {
     console.error('Failed to list timelapses:', error.message);
     res.status(502).json({ error: 'Unable to retrieve timelapses' });

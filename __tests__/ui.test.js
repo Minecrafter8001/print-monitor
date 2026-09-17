@@ -93,11 +93,16 @@ describe('UI and Client Tests', () => {
             name: '<print>.mp4',
             modified: new Date('2026-01-03T12:00:00Z').getTime() / 1000,
             size: 1536,
+            printStatus: 'completed',
+            printDurationSeconds: 3661,
+            timelapseDurationSeconds: 0.756,
             downloadUrl: '/api/timelapses/download?file=%3Cprint%3E.mp4'
         }]);
 
         expect(document.querySelector('.timelapse-name').textContent).toBe('<print>.mp4');
         expect(document.querySelector('.timelapse-metadata').textContent).toContain('1.50 KB');
+        expect(document.querySelector('.timelapse-summary').textContent)
+            .toBe('Completed · Print: 01:01:01 · Timelapse: 0.8s');
         expect(document.querySelector('.download-button').tagName).toBe('BUTTON');
         expect(document.querySelector('.timelapse-name').children).toHaveLength(0);
     });

@@ -110,6 +110,7 @@ function dismissToast(card, container) {
 }
 
 const timelapseController = window.PrintMonitorTimelapses.createTimelapseController({
+    formatDuration: window.PrintMonitorFormatters.formatDuration,
     formatFileSize,
     showToast
 });

@@ -207,6 +207,10 @@ class MoonrakerClient extends EventEmitter {
     return this.sendRequest('server.files.list', { root });
   }
 
+  getHistory(limit = 1000) {
+    return this.sendRequest('server.history.list', { limit, order: 'desc' });
+  }
+
   getWebcams() {
     return this.sendRequest('server.webcams.list');
   }
