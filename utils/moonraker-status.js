@@ -10,9 +10,12 @@ function getMetadataValues(value) {
   return value.split(';').map((entry) => entry.replace(/^"|"$/g, '').trim());
 }
 
+const SNAPMAKER_RFID_INDEX_BY_TOOL = [2, 1, 0, 3];
+
 function getFilamentDetails(objects, metadata, toolIndex) {
-  const rfid = objects.filament_detect?.info?.[toolIndex];
-  const rfidMaterial = rfid?.SUB_TYPE !== 'NONE' ? rfid?.SUB_TYPE : rfid?.MAIN_TYPE;
+  const rfidIndex = SNAPMAKER_RFID_INDEX_BY_TOOL[toolIndex] ?? toolIndex;
+  const rfid = objects.filament_detect?.info?.[rfidIndex];
+  const rfidMaterial = rfid?.SUB_TYPE && rfid.SUB_TYPE !== 'NONE' ? rfid.SUB_TYPE : rfid?.MAIN_TYPE;
   const sensor = objects[`filament_motion_sensor e${toolIndex}_filament`] ||
     objects[`filament_switch_sensor e${toolIndex}_filament`];
 

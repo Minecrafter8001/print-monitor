@@ -99,7 +99,11 @@ describe('mapMoonrakerStatus', () => {
     const result = mapMoonrakerStatus({
       extruder: { temperature: 20 },
       filament_detect: {
-        info: [{ MAIN_TYPE: 'PLA', SUB_TYPE: 'PLA Basic', RGB_1: 0xE72F1D }]
+        info: [
+          { MAIN_TYPE: 'NONE' },
+          { MAIN_TYPE: 'NONE' },
+          { MAIN_TYPE: 'PLA', SUB_TYPE: 'PLA Basic', RGB_1: 0xE72F1D }
+        ]
       },
       'filament_motion_sensor e0_filament': { filament_detected: true }
     }, {
@@ -113,5 +117,29 @@ describe('mapMoonrakerStatus', () => {
       source: 'rfid',
       loaded: true
     });
+  });
+
+  test('maps Snapmaker U1 RFID slots to logical toolhead order', () => {
+    const result = mapMoonrakerStatus({
+      extruder: { temperature: 20 },
+      extruder1: { temperature: 20 },
+      extruder2: { temperature: 20 },
+      extruder3: { temperature: 20 },
+      filament_detect: {
+        info: [
+          { MAIN_TYPE: 'PLA', RGB_1: 0x808080 },
+          { MAIN_TYPE: 'PLA', RGB_1: 0xFFFF00 },
+          { MAIN_TYPE: 'PLA', RGB_1: 0xFF0000 },
+          { MAIN_TYPE: 'PLA', RGB_1: 0x000000 }
+        ]
+      }
+    });
+
+    expect(result.temperatures.tools.map(tool => tool.filament.color)).toEqual([
+      '#FF0000',
+      '#FFFF00',
+      '#808080',
+      '#000000'
+    ]);
   });
 });

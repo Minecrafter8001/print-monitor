@@ -188,6 +188,7 @@ function streamNormalizedCamera(req, res) {
     '-c:v', 'libx264', '-profile:v', 'high', '-preset', 'veryfast', '-tune', 'zerolatency',
     '-pix_fmt', 'yuv420p', '-g', String(inputFPS * 2), '-keyint_min', String(inputFPS * 2), '-sc_threshold', '0',
     '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
+    '-frag_duration', '1000000',
     '-flush_packets', '1', '-f', 'mp4', 'pipe:1'
   ];
   const ffmpeg = spawn(ffmpegPath, args, { windowsHide: true });
