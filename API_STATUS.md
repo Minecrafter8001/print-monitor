@@ -68,6 +68,8 @@ Returns the current Moonraker-derived status and browser/camera usage counters.
 
 Each tool's `filament` uses Snapmaker's physical-tool assignment from `print_task_config`, including manually edited untagged spools. Direct RFID data from `filament_detect` is the fallback. G-code filament metadata is ignored because its IDs do not reliably identify physical toolheads. `loaded` comes from the tool's physical filament sensor and may be `null` when that sensor is unavailable.
 
+`temperatures.activeTool` is `null` when Snapmaker reports every tool's `active_pin` as false. On standard Klipper configurations without `active_pin`, it follows `toolhead.extruder`.
+
 ## `GET /api/camera`
 
 Redirects to `/api/camera/video`.

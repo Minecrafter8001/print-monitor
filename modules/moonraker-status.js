@@ -66,10 +66,10 @@ function mapMoonrakerStatus(objects, metadata = {}) {
   const toolEntries = Object.entries(objects)
     .filter(([name]) => /^extruder\d*$/.test(name))
     .sort(([left], [right]) => left.localeCompare(right, undefined, { numeric: true }));
-  const activeToolEntry = toolEntries.find(([, tool]) => tool.active_pin === true) ||
-    toolEntries.find(([name]) => name === toolhead.extruder) ||
-    toolEntries[0] ||
-    ['extruder', {}];
+  const hasActivePinState = toolEntries.some(([, tool]) => typeof tool.active_pin === 'boolean');
+  const activeToolEntry = hasActivePinState
+    ? toolEntries.find(([, tool]) => tool.active_pin === true)
+    : toolEntries.find(([name]) => name === toolhead.extruder);
   const enclosureEntry = Object.entries(objects).find(([name]) =>
     /^temperature_sensor /.test(name) && /(cavity|chamber|enclosure)/i.test(name)
   );
@@ -101,12 +101,12 @@ function mapMoonrakerStatus(objects, metadata = {}) {
         current: Math.round(heaterBed.temperature || 0),
         target: Math.round(heaterBed.target || 0)
       },
-      activeTool: {
+      activeTool: activeToolEntry ? {
         name: activeToolEntry[0],
         friendlyName: getToolFriendlyName(activeToolEntry[0]),
         current: Math.round(activeToolEntry[1].temperature || 0),
         target: Math.round(activeToolEntry[1].target || 0)
-      },
+      } : null,
       enclosure: {
         name: enclosureEntry?.[0] || null,
         current: Math.round(enclosure.temperature || 0),
@@ -117,7 +117,7 @@ function mapMoonrakerStatus(objects, metadata = {}) {
         friendlyName: getToolFriendlyName(name),
         current: Math.round(tool.temperature || 0),
         target: Math.round(tool.target || 0),
-        active: name === activeToolEntry[0],
+        active: name === activeToolEntry?.[0],
         filament: getFilamentDetails(objects, index)
       }))
     },

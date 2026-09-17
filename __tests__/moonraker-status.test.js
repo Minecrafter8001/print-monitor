@@ -89,6 +89,30 @@ describe('mapMoonrakerStatus', () => {
     });
   });
 
+  test('does not select a parked tool when all active pins are false', () => {
+    const result = mapMoonrakerStatus({
+      toolhead: { extruder: 'extruder' },
+      extruder: { temperature: 44, state: 'PARKED', active_pin: false },
+      extruder1: { temperature: 31, state: 'PARKED', active_pin: false },
+      extruder2: { temperature: 37, state: 'PARKED', active_pin: false },
+      extruder3: { temperature: 31, state: 'PARKED', active_pin: false }
+    });
+
+    expect(result.temperatures.activeTool).toBeNull();
+    expect(result.temperatures.tools.every(tool => tool.active === false)).toBe(true);
+  });
+
+  test('uses toolhead.extruder when active pin state is unavailable', () => {
+    const result = mapMoonrakerStatus({
+      toolhead: { extruder: 'extruder1' },
+      extruder: { temperature: 30 },
+      extruder1: { temperature: 205 }
+    });
+
+    expect(result.temperatures.activeTool.name).toBe('extruder1');
+    expect(result.temperatures.tools[1].active).toBe(true);
+  });
+
   test('numbers Klipper extruders as one-based toolheads', () => {
     expect(getToolFriendlyName('extruder')).toBe('Toolhead 1');
     expect(getToolFriendlyName('extruder1')).toBe('Toolhead 2');
