@@ -110,7 +110,7 @@ describe('mapMoonrakerStatus', () => {
     });
 
     expect(result.temperatures.tools[0].filament).toEqual({
-      material: 'PLA Basic',
+      material: 'PLA',
       color: '#E72F1D',
       source: 'rfid',
       loaded: true
@@ -155,10 +155,10 @@ describe('mapMoonrakerStatus', () => {
     });
 
     expect(result.temperatures.tools.map(tool => tool.filament)).toEqual([
-      { material: 'SnapSpeed', color: '#E72F1D', source: 'printer', loaded: null },
-      { material: 'SnapSpeed', color: '#F8F81C', source: 'printer', loaded: null },
+      { material: 'PLA', color: '#E72F1D', source: 'printer', loaded: null },
+      { material: 'PLA', color: '#F8F81C', source: 'printer', loaded: null },
       { material: 'PLA', color: '#8C9099', source: 'printer', loaded: null },
-      { material: 'SnapSpeed', color: '#000000', source: 'printer', loaded: null }
+      { material: 'PLA', color: '#000000', source: 'printer', loaded: null }
     ]);
   });
 

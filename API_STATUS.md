@@ -38,7 +38,7 @@ Returns the current Moonraker-derived status and browser/camera usage counters.
           "current": 32,
           "target": 0,
           "active": false,
-          "filament": { "material": "SnapSpeed", "color": "#E72F1D", "source": "printer", "loaded": true }
+          "filament": { "material": "PLA", "color": "#E72F1D", "source": "printer", "loaded": true }
         },
         {
           "name": "extruder3",

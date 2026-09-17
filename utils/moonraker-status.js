@@ -22,7 +22,7 @@ function getFilamentDetails(objects, toolIndex) {
   const taskConfig = objects.print_task_config || {};
   const taskType = taskConfig.filament_type?.[toolIndex];
   const taskSubtype = taskConfig.filament_sub_type?.[toolIndex];
-  const taskMaterial = taskSubtype && taskSubtype !== 'NONE' ? taskSubtype : taskType;
+  const taskMaterial = taskType && taskType !== 'NONE' ? taskType : taskSubtype;
   const taskColor = normalizeFilamentColor(
     taskConfig.filament_color_rgba?.[toolIndex] ?? taskConfig.filament_color?.[toolIndex]
   );
@@ -37,7 +37,7 @@ function getFilamentDetails(objects, toolIndex) {
   }
 
   const rfid = objects.filament_detect?.info?.[toolIndex];
-  const rfidMaterial = rfid?.SUB_TYPE && rfid.SUB_TYPE !== 'NONE' ? rfid.SUB_TYPE : rfid?.MAIN_TYPE;
+  const rfidMaterial = rfid?.MAIN_TYPE && rfid.MAIN_TYPE !== 'NONE' ? rfid.MAIN_TYPE : rfid?.SUB_TYPE;
 
   if (rfidMaterial && rfidMaterial !== 'NONE') {
     return {
