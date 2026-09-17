@@ -10,7 +10,6 @@ Returns the current Moonraker-derived status and browser/camera usage counters.
     "connected": true,
     "name": "snapmaker",
     "klipper": { "state": "ready", "message": "Printer is ready" },
-    "machine": { "state": "bed_leveling", "action": "bed_prescanning" },
     "print": {
       "state": "printing",
       "filename": "part.gcode",
@@ -65,7 +64,7 @@ Returns the current Moonraker-derived status and browser/camera usage counters.
 }
 ```
 
-`print.state` is the raw Moonraker `print_stats.state`. `klipper.state` is the raw `webhooks.state`. `machine.state` and `machine.action` decode Snapmaker's `machine_state_manager` values, exposing operations such as bed leveling, calibration, homing, and filament loading. `estimatedRemainingSeconds` is `null` when slicer metadata has no estimated duration.
+`print.state` is the raw Moonraker `print_stats.state`. `klipper.state` is the raw `webhooks.state`. `estimatedRemainingSeconds` is `null` when slicer metadata has no estimated duration.
 
 Each tool's `filament` uses Snapmaker's physical-tool assignment from `print_task_config`, including manually edited untagged spools. Direct RFID data from `filament_detect` is the fallback. G-code filament metadata is ignored because its IDs do not reliably identify physical toolheads. `loaded` comes from the tool's physical filament sensor and may be `null` when that sensor is unavailable.
 

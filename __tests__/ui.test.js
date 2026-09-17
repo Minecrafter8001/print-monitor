@@ -100,7 +100,6 @@ describe('UI and Client Tests', () => {
                 connected: true,
                 name: 'Test Printer',
                 klipper: { state: 'ready', message: '' },
-                machine: { state: 'bed_leveling', action: 'bed_prescanning' },
                 print: {
                     state: 'printing',
                     filename: 'test.gcode',
@@ -132,8 +131,6 @@ describe('UI and Client Tests', () => {
         expect(document.getElementById('printerName').textContent).toBe('Test Printer');
         expect(document.getElementById('klipperState').textContent).toBe('READY');
         expect(document.getElementById('printState').textContent).toBe('PRINTING');
-        expect(document.getElementById('machineState').textContent).toBe('BED LEVELING');
-        expect(document.getElementById('machineAction').textContent).toBe('BED PRESCANNING');
         expect(document.getElementById('currentFile').textContent).toBe('test.gcode');
         expect(document.getElementById('progressText').textContent).toBe('51%');
         const toolhead4 = document.getElementById('toolhead3');
