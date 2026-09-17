@@ -10,7 +10,7 @@ function getMetadataValues(value) {
   return value.split(';').map((entry) => entry.replace(/^"|"$/g, '').trim());
 }
 
-const SNAPMAKER_RFID_INDEX_BY_TOOL = [2, 1, 0, 3];
+const SNAPMAKER_RFID_INDEX_BY_TOOL = [0, 1, 2, 3];
 
 function getFilamentDetails(objects, metadata, toolIndex) {
   const rfidIndex = SNAPMAKER_RFID_INDEX_BY_TOOL[toolIndex] ?? toolIndex;
