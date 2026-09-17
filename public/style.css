@@ -48,6 +48,32 @@ header h1 {
     margin: 0;
 }
 
+.header-actions,
+.menu-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.icon-button {
+    width: 42px;
+    height: 42px;
+    border: 1px solid #31588a;
+    border-radius: 6px;
+    background: #101a31;
+    color: #e0e0e0;
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.icon-button:hover,
+.icon-button:focus-visible {
+    color: #00d4ff;
+    border-color: #00d4ff;
+    outline: none;
+}
+
 /* Header info container for status, user count, and time */
 .header-info-container {
     display: flex;
@@ -472,6 +498,102 @@ footer {
     display: none;
 }
 
+body.menu-open {
+    overflow: hidden;
+}
+
+.menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    justify-content: flex-end;
+    background: rgba(3, 8, 20, 0.72);
+}
+
+.menu-backdrop.hidden {
+    display: none;
+}
+
+.app-menu {
+    width: min(520px, 100%);
+    height: 100%;
+    overflow-y: auto;
+    padding: 24px;
+    background: #111b32;
+    border-left: 1px solid #31588a;
+    box-shadow: -12px 0 32px rgba(0, 0, 0, 0.35);
+}
+
+.menu-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid #31588a;
+}
+
+.menu-header h2 {
+    color: #00d4ff;
+    font-size: 1.4rem;
+}
+
+.timelapse-state {
+    padding: 28px 0;
+    color: #aab6cc;
+    text-align: center;
+}
+
+.timelapse-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 0;
+    border-bottom: 1px solid #263d61;
+}
+
+.timelapse-details {
+    min-width: 0;
+    flex: 1;
+}
+
+.timelapse-name {
+    overflow-wrap: anywhere;
+    color: #f2f5fa;
+    font-weight: 600;
+}
+
+.timelapse-metadata {
+    margin-top: 5px;
+    color: #9aa9c1;
+    font-size: 0.85rem;
+}
+
+.download-button {
+    flex: 0 0 auto;
+    padding: 9px 12px;
+    border: 1px solid #00a9d6;
+    border-radius: 6px;
+    color: #061321;
+    background: #00d4ff;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.download-button:hover,
+.download-button:focus-visible {
+    background: #62e5ff;
+    outline: none;
+}
+
+.download-button:disabled {
+    cursor: progress;
+    color: #b8c4d8;
+    background: #263d61;
+    border-color: #45638b;
+}
+
 /* Responsive design */
 @media (max-width: 1200px) {
     .main-grid {
@@ -488,6 +610,16 @@ footer {
 
     header h1 {
         font-size: 1.5em;
+    }
+
+    .header-actions {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .connection-status {
+        flex-wrap: wrap;
+        justify-content: center;
     }
 
     .main-grid {
@@ -511,6 +643,14 @@ footer {
         display: inline-block;
         width: auto;
         height: auto;
+    }
+
+    .app-menu {
+        padding: 18px;
+    }
+
+    .timelapse-row {
+        align-items: flex-start;
     }
 }
 

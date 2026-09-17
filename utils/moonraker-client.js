@@ -203,6 +203,10 @@ class MoonrakerClient extends EventEmitter {
     return this.sendRequest('server.files.metadata', { filename });
   }
 
+  listFiles(root) {
+    return this.sendRequest('server.files.list', { root });
+  }
+
   getWebcams() {
     return this.sendRequest('server.webcams.list');
   }

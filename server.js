@@ -9,12 +9,18 @@ const ENABLE_DEBUG_ENDPOINTS = process.env.ENABLE_DEBUG_ENDPOINTS === 'true';
 const express = require('express');
 const http = require('http');
 const { spawn } = require('child_process');
+const { Readable } = require('stream');
 const WebSocket = require('ws');
 const ffmpegPath = process.env.FFMPEG_PATH || require('ffmpeg-static');
 require('utils/logger');
 const { getClientIP, isLocalIP } = require('utils/ip-utils');
 const { mapMoonrakerStatus } = require('utils/moonraker-status');
 const { detectCameraMode } = require('utils/camera-stream-utils');
+const {
+  buildTimelapseList,
+  encodeMoonrakerFilePath,
+  isSafeTimelapsePath
+} = require('utils/timelapse-utils');
 const UserStats = require('utils/user-stats');
 
 const MoonrakerClient = require('utils/moonraker-client');
@@ -152,6 +158,74 @@ app.use(express.static('public'));
 // API endpoint to get current printer status
 app.get('/api/status', (req, res) => {
   res.json(buildStatusPayload());
+});
+
+app.get('/api/timelapses', async (req, res) => {
+  if (!printerClient?.connected) {
+    return res.status(503).json({ error: 'Printer is not connected' });
+  }
+
+  try {
+    const files = await printerClient.listFiles('camera');
+    res.json({ timelapses: buildTimelapseList(files) });
+  } catch (error) {
+    console.error('Failed to list timelapses:', error.message);
+    res.status(502).json({ error: 'Unable to retrieve timelapses' });
+  }
+});
+
+app.get('/api/timelapses/download', async (req, res) => {
+  const filePath = req.query.file;
+  if (!isSafeTimelapsePath(filePath)) {
+    return res.status(400).json({ error: 'Invalid timelapse path' });
+  }
+  if (!printerClient?.connected) {
+    return res.status(503).json({ error: 'Printer is not connected' });
+  }
+
+  try {
+    const files = await printerClient.listFiles('camera');
+    if (!files.some(file => file.path === filePath && isSafeTimelapsePath(file.path))) {
+      return res.status(404).json({ error: 'Timelapse not found' });
+    }
+
+    const headers = {};
+    if (req.headers.range) headers.Range = req.headers.range;
+    if (printerClient.apiKey) headers['X-Api-Key'] = printerClient.apiKey;
+
+    const abortController = new AbortController();
+    res.on('close', () => {
+      if (!res.writableEnded) abortController.abort();
+    });
+
+    const response = await fetch(
+      printerClient.resolveURL(`/server/files/camera/${encodeMoonrakerFilePath(filePath)}`),
+      { headers, signal: abortController.signal }
+    );
+    if (!response.ok || !response.body) {
+      return res.status(response.status).json({ error: 'Unable to download timelapse' });
+    }
+
+    const forwardedHeaders = [
+      'accept-ranges',
+      'content-disposition',
+      'content-length',
+      'content-range',
+      'content-type',
+      'last-modified'
+    ];
+    res.status(response.status);
+    forwardedHeaders.forEach(header => {
+      const value = response.headers.get(header);
+      if (value) res.setHeader(header, value);
+    });
+    Readable.fromWeb(response.body).pipe(res);
+  } catch (error) {
+    if (error.name === 'AbortError') return;
+    console.error('Failed to download timelapse:', error.message);
+    if (!res.headersSent) res.status(502).json({ error: 'Unable to download timelapse' });
+    else res.destroy(error);
+  }
 });
 
 app.get('/api/camera', (req, res) => res.redirect(307, '/api/camera/video'));

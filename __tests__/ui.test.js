@@ -82,6 +82,59 @@ describe('UI and Client Tests', () => {
         expect(formatted).toMatch(/:00:00/);
     });
 
+    test('renders timelapse metadata and a download button', () => {
+        renderTimelapses([{
+            name: '<print>.mp4',
+            modified: new Date('2026-01-03T12:00:00Z').getTime() / 1000,
+            size: 1536,
+            downloadUrl: '/api/timelapses/download?file=%3Cprint%3E.mp4'
+        }]);
+
+        expect(document.querySelector('.timelapse-name').textContent).toBe('<print>.mp4');
+        expect(document.querySelector('.timelapse-metadata').textContent).toContain('1.50 KB');
+        expect(document.querySelector('.download-button').tagName).toBe('BUTTON');
+        expect(document.querySelector('.timelapse-name').children).toHaveLength(0);
+    });
+
+    test('downloads timelapses in bounded byte ranges', async () => {
+        const chunkSize = TIMELAPSE_DOWNLOAD_CHUNK_SIZE;
+        const timelapse = {
+            name: 'large.mp4',
+            size: chunkSize + 5,
+            downloadUrl: '/api/timelapses/download?file=large.mp4'
+        };
+        const button = document.createElement('button');
+        const firstChunk = new Blob([new Uint8Array(chunkSize)]);
+        const secondChunk = new Blob([new Uint8Array(5)]);
+        global.fetch = jest.fn()
+            .mockResolvedValueOnce({ status: 206, blob: async () => firstChunk })
+            .mockResolvedValueOnce({ status: 206, blob: async () => secondChunk });
+        URL.createObjectURL = jest.fn(() => 'blob:timelapse');
+        URL.revokeObjectURL = jest.fn();
+        HTMLAnchorElement.prototype.click = jest.fn();
+
+        await downloadTimelapse(timelapse, button);
+
+        expect(global.fetch).toHaveBeenNthCalledWith(1, timelapse.downloadUrl, {
+            headers: { Range: `bytes=0-${chunkSize - 1}` }
+        });
+        expect(global.fetch).toHaveBeenNthCalledWith(2, timelapse.downloadUrl, {
+            headers: { Range: `bytes=${chunkSize}-${chunkSize + 4}` }
+        });
+        expect(URL.createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
+        expect(HTMLAnchorElement.prototype.click).toHaveBeenCalled();
+        expect(button.disabled).toBe(false);
+        expect(button.textContent).toBe('Download');
+    });
+
+    test('shows an empty state when there are no timelapses', () => {
+        renderTimelapses([]);
+
+        expect(document.getElementById('timelapseState').textContent)
+            .toBe('No completed timelapses found.');
+        expect(document.getElementById('timelapseList').children).toHaveLength(0);
+    });
+
     test('updateUI updates connection status', () => {
         const payload = {
             printer: { connected: true },

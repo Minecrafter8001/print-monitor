@@ -13,6 +13,7 @@ const ETA_UPDATE_THRESHOLD_MS = 60000;
 const CAMERA_MIME_TYPE = 'video/mp4; codecs="avc1.640028"';
 const CAMERA_MAX_BUFFER_SECONDS = 6;
 const CAMERA_LIVE_EDGE_DELAY_SECONDS = 0.5;
+const TIMELAPSE_DOWNLOAD_CHUNK_SIZE = 16 * 1024 * 1024;
 
 // ---------------- TIME HELPERS ----------------
 
@@ -444,9 +445,150 @@ function dismissToast(card, container) {
     }, 220);
 }
 
+function formatFileSize(bytes) {
+    if (!Number.isFinite(bytes) || bytes < 0) return '-';
+    if (bytes < 1024) return `${bytes} B`;
+
+    const units = ['KB', 'MB', 'GB'];
+    let value = bytes / 1024;
+    let unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+        value /= 1024;
+        unitIndex += 1;
+    }
+    return `${value.toFixed(value >= 10 ? 1 : 2)} ${units[unitIndex]}`;
+}
+
+async function downloadTimelapse(timelapse, button) {
+    if (!Number.isFinite(timelapse.size) || timelapse.size <= 0) {
+        throw new Error('Timelapse size is unavailable');
+    }
+
+    button.disabled = true;
+    const chunks = [];
+
+    try {
+        for (let start = 0; start < timelapse.size; start += TIMELAPSE_DOWNLOAD_CHUNK_SIZE) {
+            const end = Math.min(start + TIMELAPSE_DOWNLOAD_CHUNK_SIZE, timelapse.size) - 1;
+            const response = await fetch(timelapse.downloadUrl, {
+                headers: { Range: `bytes=${start}-${end}` }
+            });
+            if (response.status !== 206) {
+                throw new Error(`Chunk request failed with status ${response.status}`);
+            }
+
+            const chunk = await response.blob();
+            if (chunk.size !== end - start + 1) {
+                throw new Error('Downloaded chunk size did not match the requested range');
+            }
+            chunks.push(chunk);
+            button.textContent = `${Math.round(((end + 1) / timelapse.size) * 100)}%`;
+        }
+
+        const objectUrl = URL.createObjectURL(new Blob(chunks, { type: 'video/mp4' }));
+        const anchor = document.createElement('a');
+        anchor.href = objectUrl;
+        anchor.download = timelapse.name;
+        anchor.click();
+        URL.revokeObjectURL(objectUrl);
+    } finally {
+        button.disabled = false;
+        button.textContent = 'Download';
+    }
+}
+
+function renderTimelapses(timelapses) {
+    const list = document.getElementById('timelapseList');
+    const state = document.getElementById('timelapseState');
+    list.replaceChildren();
+
+    if (!timelapses.length) {
+        state.textContent = 'No completed timelapses found.';
+        state.classList.remove('hidden');
+        return;
+    }
+
+    state.classList.add('hidden');
+    timelapses.forEach(timelapse => {
+        const row = document.createElement('div');
+        row.className = 'timelapse-row';
+
+        const details = document.createElement('div');
+        details.className = 'timelapse-details';
+        const name = document.createElement('div');
+        name.className = 'timelapse-name';
+        name.textContent = timelapse.name;
+        const metadata = document.createElement('div');
+        metadata.className = 'timelapse-metadata';
+        const modified = new Date(timelapse.modified * 1000);
+        metadata.textContent = `${modified.toLocaleString()} · ${formatFileSize(timelapse.size)}`;
+        details.append(name, metadata);
+
+        const download = document.createElement('button');
+        download.className = 'download-button';
+        download.type = 'button';
+        download.textContent = 'Download';
+        download.addEventListener('click', async () => {
+            try {
+                await downloadTimelapse(timelapse, download);
+            } catch (error) {
+                console.error('Failed to download timelapse:', error);
+                showToast('Download failed', timelapse.name, 'Try again in a moment.');
+            }
+        });
+
+        row.append(details, download);
+        list.appendChild(row);
+    });
+}
+
+async function loadTimelapses() {
+    const state = document.getElementById('timelapseState');
+    const list = document.getElementById('timelapseList');
+    state.textContent = 'Loading timelapses...';
+    state.classList.remove('hidden');
+    list.replaceChildren();
+
+    try {
+        const response = await fetch('/api/timelapses');
+        if (!response.ok) throw new Error(`Request failed with status ${response.status}`);
+        const payload = await response.json();
+        renderTimelapses(payload.timelapses || []);
+    } catch (error) {
+        console.error('Failed to load timelapses:', error);
+        state.textContent = 'Timelapses could not be loaded.';
+    }
+}
+
+function openMenu() {
+    const backdrop = document.getElementById('menuBackdrop');
+    backdrop.classList.remove('hidden');
+    document.body.classList.add('menu-open');
+    document.getElementById('closeMenu').focus();
+    loadTimelapses();
+}
+
+function closeMenu() {
+    document.getElementById('menuBackdrop').classList.add('hidden');
+    document.body.classList.remove('menu-open');
+    document.getElementById('menuButton').focus();
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Snapmaker Moonraker Print Monitor starting...');
     connectWebSocket();
+
+    document.getElementById('menuButton').addEventListener('click', openMenu);
+    document.getElementById('closeMenu').addEventListener('click', closeMenu);
+    document.getElementById('refreshTimelapses').addEventListener('click', loadTimelapses);
+    document.getElementById('menuBackdrop').addEventListener('click', event => {
+        if (event.target === event.currentTarget) closeMenu();
+    });
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && !document.getElementById('menuBackdrop').classList.contains('hidden')) {
+            closeMenu();
+        }
+    });
 
     // Update UI every second to keep clock and other elements fresh
     setInterval(() => {
