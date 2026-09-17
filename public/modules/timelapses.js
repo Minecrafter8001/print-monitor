@@ -1,7 +1,7 @@
 (function initializeTimelapses(global) {
     const DOWNLOAD_CHUNK_SIZE = 16 * 1024 * 1024;
 
-    function createTimelapseController({ formatDuration, formatFileSize, showToast }) {
+    function createTimelapseController({ formatFileSize, showToast }) {
         function formatStatus(status) {
             if (!status) return 'Status unknown';
             return status
@@ -9,11 +9,19 @@
                 .replace(/\b\w/g, character => character.toUpperCase());
         }
 
-        function formatTimelapseDuration(seconds) {
-            if (Number.isFinite(seconds) && seconds > 0 && seconds < 10) {
-                return `${seconds.toFixed(1)}s`;
-            }
-            return formatDuration(seconds);
+        function formatCompactDuration(seconds) {
+            if (!Number.isFinite(seconds) || seconds <= 0) return '-';
+            if (seconds < 10) return `${seconds.toFixed(1)}s`;
+
+            const totalSeconds = Math.round(seconds);
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const remainingSeconds = totalSeconds % 60;
+            return [
+                hours ? `${hours}h` : null,
+                minutes ? `${minutes}m` : null,
+                remainingSeconds || (!hours && !minutes) ? `${remainingSeconds}s` : null
+            ].filter(Boolean).join(' ');
         }
 
         async function download(timelapse, button) {
@@ -82,8 +90,8 @@
                 const summary = document.createElement('div');
                 summary.className = 'timelapse-summary';
                 summary.textContent = `${formatStatus(timelapse.printStatus)} · ` +
-                    `Print: ${formatDuration(timelapse.printDurationSeconds)} · ` +
-                    `Timelapse: ${formatTimelapseDuration(timelapse.timelapseDurationSeconds)}`;
+                    `Print: ${formatCompactDuration(timelapse.printDurationSeconds)} · ` +
+                    `Timelapse: ${formatCompactDuration(timelapse.timelapseDurationSeconds)}`;
                 details.append(name, metadata, summary);
 
                 const downloadButton = document.createElement('button');
@@ -154,7 +162,7 @@
             });
         }
 
-        return { close, download, initialize, load, open, render };
+        return { close, download, formatCompactDuration, initialize, load, open, render };
     }
 
     global.PrintMonitorTimelapses = { DOWNLOAD_CHUNK_SIZE, createTimelapseController };

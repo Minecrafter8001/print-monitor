@@ -102,9 +102,19 @@ describe('UI and Client Tests', () => {
         expect(document.querySelector('.timelapse-name').textContent).toBe('<print>.mp4');
         expect(document.querySelector('.timelapse-metadata').textContent).toContain('1.50 KB');
         expect(document.querySelector('.timelapse-summary').textContent)
-            .toBe('Completed · Print: 01:01:01 · Timelapse: 0.8s');
+            .toBe('Completed · Print: 1h 1m 1s · Timelapse: 0.8s');
         expect(document.querySelector('.download-button').tagName).toBe('BUTTON');
         expect(document.querySelector('.timelapse-name').children).toHaveLength(0);
+    });
+
+    test.each([
+        [0.756, '0.8s'],
+        [17, '17s'],
+        [61, '1m 1s'],
+        [19340, '5h 22m 20s'],
+        [3600, '1h']
+    ])('formats compact timelapse and print durations', (seconds, expected) => {
+        expect(timelapseController.formatCompactDuration(seconds)).toBe(expected);
     });
 
     test('downloads timelapses in bounded byte ranges', async () => {
