@@ -87,6 +87,6 @@ The printer object contains `connected`, `name`, `klipper`, `print`, `temperatur
 
 ```powershell
 npm test
-node utils/websocket-tester.js http://192.168.1.100:7125
-node utils/moonraker-probe.js http://192.168.1.100:7125
+node modules/websocket-tester.js http://192.168.1.100:7125
+node modules/moonraker-probe.js http://192.168.1.100:7125
 ```

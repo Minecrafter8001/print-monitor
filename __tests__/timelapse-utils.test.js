@@ -2,7 +2,7 @@ const {
   buildTimelapseList,
   encodeMoonrakerFilePath,
   isSafeTimelapsePath
-} = require('../utils/timelapse-utils');
+} = require('../modules/timelapse-utils');
 
 describe('timelapse utilities', () => {
   test('returns MP4 files newest first with download URLs', () => {

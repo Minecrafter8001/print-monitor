@@ -1,4 +1,4 @@
-const { isValidIP } = require('utils/ip-utils');
+const { isValidIP } = require('modules/ip-utils');
 
 class UserStats {
   constructor() {

@@ -1,11 +1,11 @@
 require('module-alias/register');
-const MoonrakerClient = require('utils/moonraker-client');
-const { mapMoonrakerStatus } = require('utils/moonraker-status');
+const MoonrakerClient = require('modules/moonraker-client');
+const { mapMoonrakerStatus } = require('modules/moonraker-status');
 
 async function main() {
   const moonrakerURL = process.argv[2] || process.env.MOONRAKER_URL;
   if (!moonrakerURL) {
-    console.error('Usage: node utils/websocket-tester.js http://printer:7125');
+    console.error('Usage: node modules/websocket-tester.js http://printer:7125');
     process.exitCode = 1;
     return;
   }

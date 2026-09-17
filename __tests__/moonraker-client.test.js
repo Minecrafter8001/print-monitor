@@ -1,5 +1,5 @@
 const WebSocket = require('ws');
-const MoonrakerClient = require('utils/moonraker-client');
+const MoonrakerClient = require('modules/moonraker-client');
 
 describe('MoonrakerClient', () => {
   test('sendRequest rejects when not connected', async () => {

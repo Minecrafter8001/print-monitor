@@ -1,4 +1,4 @@
-const { detectCameraMode } = require('../utils/camera-stream-utils');
+const { detectCameraMode } = require('../modules/camera-stream-utils');
 
 describe('camera stream utilities', () => {
   test.each([

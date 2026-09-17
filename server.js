@@ -12,18 +12,18 @@ const { spawn } = require('child_process');
 const { Readable } = require('stream');
 const WebSocket = require('ws');
 const ffmpegPath = process.env.FFMPEG_PATH || require('ffmpeg-static');
-require('utils/logger');
-const { getClientIP, isLocalIP } = require('utils/ip-utils');
-const { mapMoonrakerStatus } = require('utils/moonraker-status');
-const { detectCameraMode } = require('utils/camera-stream-utils');
+require('modules/logger');
+const { getClientIP, isLocalIP } = require('modules/ip-utils');
+const { mapMoonrakerStatus } = require('modules/moonraker-status');
+const { detectCameraMode } = require('modules/camera-stream-utils');
 const {
   buildTimelapseList,
   encodeMoonrakerFilePath,
   isSafeTimelapsePath
-} = require('utils/timelapse-utils');
-const UserStats = require('utils/user-stats');
+} = require('modules/timelapse-utils');
+const UserStats = require('modules/user-stats');
 
-const MoonrakerClient = require('utils/moonraker-client');
+const MoonrakerClient = require('modules/moonraker-client');
 
 const app = express();
 const server = http.createServer(app);

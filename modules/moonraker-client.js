@@ -1,4 +1,4 @@
-require('utils/logger');
+require('modules/logger');
 const EventEmitter = require('events');
 const WebSocket = require('ws');
 

@@ -1,5 +1,5 @@
 require('module-alias/register');
-const MoonrakerClient = require('utils/moonraker-client');
+const MoonrakerClient = require('modules/moonraker-client');
 
 const TELEMETRY_OBJECT_PATTERN = /extruder|heater|temperature|sensor|chamber|enclosure|print_stats|virtual_sdcard|webhooks|display_status|toolhead|gcode_move/i;
 const READ_ONLY_METHODS = {
@@ -80,7 +80,7 @@ async function probeMoonraker(moonrakerURL) {
 async function main() {
   const moonrakerURL = process.argv[2] || process.env.MOONRAKER_URL;
   if (!moonrakerURL) {
-    console.error('Usage: node utils/moonraker-probe.js http://printer:7125');
+    console.error('Usage: node modules/moonraker-probe.js http://printer:7125');
     process.exitCode = 1;
     return;
   }

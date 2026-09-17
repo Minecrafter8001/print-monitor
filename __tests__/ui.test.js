@@ -37,7 +37,11 @@ window.location = {
 
 // Load the HTML and JS
 const html = fs.readFileSync(path.resolve(__dirname, '../public/index.html'), 'utf8');
-const script = fs.readFileSync(path.resolve(__dirname, '../public/app.js'), 'utf8');
+const scripts = ['formatters.js', 'camera-player.js', 'dashboard-ui.js', 'timelapses.js', 'app.js']
+    .map(file => fs.readFileSync(path.resolve(
+        __dirname,
+        `../public/${file === 'app.js' ? file : `modules/${file}`}`
+    ), 'utf8'));
 
 describe('UI and Client Tests', () => {
     let originalConsoleLog;
@@ -63,27 +67,29 @@ describe('UI and Client Tests', () => {
         
         // Execute the script in the window context using eval
         // Convert let/const to var so they attach to window for testing
-        const scriptWithVar = script.replace(/^(let|const) /gm, 'var ');
-        window.eval(scriptWithVar);
+        scripts.forEach(script => {
+            const scriptWithVar = script.replace(/^(let|const) /gm, 'var ');
+            window.eval(scriptWithVar);
+        });
     });
 
     test('formatDuration formats seconds correctly', () => {
-        expect(formatDuration(3661)).toBe('01:01:01');
-        expect(formatDuration(60)).toBe('00:01:00');
-        expect(formatDuration(0)).toBe('-');
-        expect(formatDuration(-1)).toBe('-');
-        expect(formatDuration(NaN)).toBe('-');
+        expect(PrintMonitorFormatters.formatDuration(3661)).toBe('01:01:01');
+        expect(PrintMonitorFormatters.formatDuration(60)).toBe('00:01:00');
+        expect(PrintMonitorFormatters.formatDuration(0)).toBe('-');
+        expect(PrintMonitorFormatters.formatDuration(-1)).toBe('-');
+        expect(PrintMonitorFormatters.formatDuration(NaN)).toBe('-');
     });
 
     test('formatClockTime formats Date correctly', () => {
         const date = new Date('2026-01-03T12:00:00');
         // The exact format might depend on locale, but we can check if it contains parts
-        const formatted = formatClockTime(date);
+        const formatted = PrintMonitorFormatters.formatClockTime(date);
         expect(formatted).toMatch(/:00:00/);
     });
 
     test('renders timelapse metadata and a download button', () => {
-        renderTimelapses([{
+        timelapseController.render([{
             name: '<print>.mp4',
             modified: new Date('2026-01-03T12:00:00Z').getTime() / 1000,
             size: 1536,
@@ -97,7 +103,7 @@ describe('UI and Client Tests', () => {
     });
 
     test('downloads timelapses in bounded byte ranges', async () => {
-        const chunkSize = TIMELAPSE_DOWNLOAD_CHUNK_SIZE;
+        const chunkSize = PrintMonitorTimelapses.DOWNLOAD_CHUNK_SIZE;
         const timelapse = {
             name: 'large.mp4',
             size: chunkSize + 5,
@@ -113,7 +119,7 @@ describe('UI and Client Tests', () => {
         URL.revokeObjectURL = jest.fn();
         HTMLAnchorElement.prototype.click = jest.fn();
 
-        await downloadTimelapse(timelapse, button);
+        await timelapseController.download(timelapse, button);
 
         expect(global.fetch).toHaveBeenNthCalledWith(1, timelapse.downloadUrl, {
             headers: { Range: `bytes=0-${chunkSize - 1}` }
@@ -128,7 +134,7 @@ describe('UI and Client Tests', () => {
     });
 
     test('shows an empty state when there are no timelapses', () => {
-        renderTimelapses([]);
+        timelapseController.render([]);
 
         expect(document.getElementById('timelapseState').textContent)
             .toBe('No completed timelapses found.');
@@ -215,7 +221,7 @@ describe('UI and Client Tests', () => {
     });
 
     test('ETA remains stable across minor status timing jitter', () => {
-        etaEstimate = { filename: null, state: null, timestamp: null };
+        PrintMonitorFormatters.resetEtaEstimate();
         const payload = {
             printer: {
                 print: {
@@ -237,7 +243,7 @@ describe('UI and Client Tests', () => {
     });
 
     test('ETA updates after a meaningful estimate change', () => {
-        etaEstimate = { filename: null, state: null, timestamp: null };
+        PrintMonitorFormatters.resetEtaEstimate();
         const payload = {
             printer: {
                 print: {
@@ -249,10 +255,10 @@ describe('UI and Client Tests', () => {
             }
         };
 
-        const initialEta = getStableEtaTimestamp(payload.printer);
+        const initialEta = PrintMonitorFormatters.getStableEtaTimestamp(payload.printer);
 
         payload.printer.print.estimatedRemainingSeconds = 720;
-        const updatedEta = getStableEtaTimestamp(payload.printer);
+        const updatedEta = PrintMonitorFormatters.getStableEtaTimestamp(payload.printer);
 
         expect(updatedEta - initialEta).toBe(120000);
     });
@@ -374,7 +380,7 @@ describe('UI and Client Tests', () => {
         }));
 
         const cameraVideo = document.getElementById('cameraVideo');
-        startCameraPlayer(cameraVideo);
+        cameraPlayer.start(cameraVideo);
         jest.advanceTimersByTime(0);
         await Promise.resolve();
         await Promise.resolve();
@@ -385,7 +391,7 @@ describe('UI and Client Tests', () => {
         expect(window.fetch).toHaveBeenCalledWith('/api/camera/video', expect.objectContaining({ cache: 'no-store' }));
         expect(sourceBuffer.appendBuffer).toHaveBeenCalledWith(new Uint8Array([1, 2, 3]));
 
-        stopCameraPlayer(cameraVideo);
+        cameraPlayer.stop(cameraVideo);
         window.MediaSource = originalMediaSource;
         window.fetch = originalFetch;
         window.URL.createObjectURL = originalCreateObjectURL;

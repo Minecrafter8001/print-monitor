@@ -1,4 +1,4 @@
-const { getToolFriendlyName, mapMoonrakerStatus } = require('utils/moonraker-status');
+const { getToolFriendlyName, mapMoonrakerStatus } = require('modules/moonraker-status');
 
 describe('mapMoonrakerStatus', () => {
   test('maps a printing status to the Moonraker browser contract', () => {
