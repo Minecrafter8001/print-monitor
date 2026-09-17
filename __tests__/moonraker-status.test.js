@@ -11,6 +11,7 @@ describe('mapMoonrakerStatus', () => {
         info: { current_layer: 4, total_layer: 20 }
       },
       virtual_sdcard: { progress: 0.25 },
+      machine_state_manager: { main_state: 3, action_code: 258 },
       toolhead: { extruder: 'extruder1' },
       extruder: { temperature: 32, target: 0, active_pin: false },
       extruder1: { temperature: 204.6, target: 210, active_pin: true },
@@ -26,6 +27,7 @@ describe('mapMoonrakerStatus', () => {
     expect(result).toMatchObject({
       connected: true,
       klipper: { state: 'ready', message: '' },
+      machine: { state: 'bed_leveling', action: 'bed_prescanning' },
       print: {
         state: 'printing',
         filename: 'part.gcode',

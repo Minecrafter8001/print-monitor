@@ -4,6 +4,73 @@ function getToolFriendlyName(objectName) {
   return `Toolhead ${nozzleIndex + 1}`;
 }
 
+const MACHINE_STATES = {
+  0: 'idle',
+  1: 'printing',
+  2: 'xyz_offset_calibration',
+  3: 'bed_leveling',
+  4: 'flow_calibration',
+  5: 'shaper_calibration',
+  6: 'upgrading',
+  7: 'abnormal',
+  8: 'screws_tilt_adjust',
+  9: 'auto_load',
+  10: 'auto_unload',
+  11: 'manual_load',
+  12: 'park_point_calibration',
+  13: 'homing_origin_calibration'
+};
+
+const MACHINE_ACTIONS = {
+  0: 'idle',
+  1: 'homing',
+  2: 'detecting_plate',
+  3: 'preheating_chamber',
+  128: 'power_loss_restore',
+  129: 'print_paused',
+  130: 'print_resuming',
+  131: 'filament_replenishing',
+  132: 'tool_switch_checking',
+  133: 'auto_feeding',
+  134: 'preextruding',
+  135: 'auto_unloading',
+  136: 'detecting_bed',
+  192: 'cleaning_toolhead_1',
+  193: 'cleaning_toolhead_2',
+  194: 'cleaning_toolhead_3',
+  195: 'cleaning_toolhead_4',
+  196: 'probing_toolhead_1_offset',
+  197: 'probing_toolhead_2_offset',
+  198: 'probing_toolhead_3_offset',
+  199: 'probing_toolhead_4_offset',
+  200: 'auto_cleaning_nozzle',
+  201: 'waiting_for_nozzle_cooling',
+  256: 'bed_leveling',
+  257: 'bed_preheating',
+  258: 'bed_prescanning',
+  320: 'calibrating_toolhead_1_flow',
+  321: 'calibrating_toolhead_2_flow',
+  322: 'calibrating_toolhead_3_flow',
+  323: 'calibrating_toolhead_4_flow',
+  384: 'shaper_calibrating',
+  512: 'resetting_screw_adjustment',
+  513: 'probing_reference_points',
+  514: 'manual_screw_tuning',
+  515: 'verifying_screw_adjustment',
+  576: 'auto_loading',
+  640: 'auto_unloading',
+  704: 'manual_loading',
+  768: 'calibrating_park_points',
+  769: 'verifying_toolhead_pick',
+  770: 'verifying_toolhead_park',
+  832: 'calibrating_homing_origin'
+};
+
+function normalizeMachineValue(value, values) {
+  if (typeof value === 'string' && !/^\d+$/.test(value)) return value.toLowerCase();
+  return values[Number(value)] || 'unknown';
+}
+
 function normalizeFilamentColor(value) {
   if (typeof value === 'string') {
     const hex = value.replace(/^#/, '').slice(0, 6);
@@ -63,6 +130,7 @@ function mapMoonrakerStatus(objects, metadata = {}) {
   const virtualSD = objects.virtual_sdcard || {};
   const toolhead = objects.toolhead || {};
   const heaterBed = objects.heater_bed || {};
+  const machine = objects.machine_state_manager || {};
   const toolEntries = Object.entries(objects)
     .filter(([name]) => /^extruder\d*$/.test(name))
     .sort(([left], [right]) => left.localeCompare(right, undefined, { numeric: true }));
@@ -82,6 +150,10 @@ function mapMoonrakerStatus(objects, metadata = {}) {
     klipper: {
       state: webhooks.state || 'disconnected',
       message: webhooks.state_message || ''
+    },
+    machine: {
+      state: normalizeMachineValue(machine.main_state, MACHINE_STATES),
+      action: normalizeMachineValue(machine.action_code, MACHINE_ACTIONS)
     },
     print: {
       state: printStats.state || 'standby',

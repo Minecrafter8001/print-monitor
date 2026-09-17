@@ -319,6 +319,21 @@ function updateUI(payload) {
     printStateElement.style.background = getStatusBg(printState);
     printStateElement.style.color = '#fff';
 
+    const formatMachineState = state => state.replaceAll('_', ' ').toUpperCase();
+    const machineState = printer.machine?.state || 'unknown';
+    const machineStateElement = document.getElementById('machineState');
+    machineStateElement.textContent = formatMachineState(machineState);
+    machineStateElement.className = 'value state';
+    machineStateElement.style.background = getStatusBg(machineState);
+    machineStateElement.style.color = '#fff';
+
+    const machineAction = printer.machine?.action || 'unknown';
+    const machineActionElement = document.getElementById('machineAction');
+    machineActionElement.textContent = formatMachineState(machineAction);
+    machineActionElement.className = 'value state';
+    machineActionElement.style.background = getStatusBg(machineAction);
+    machineActionElement.style.color = '#fff';
+
     document.getElementById('currentFile').textContent = printer.print?.filename || '-';
 
     // Last update (absolute clock time)

@@ -11,7 +11,8 @@ const CORE_OBJECTS = [
   'heaters',
   'heater_bed',
   'filament_detect',
-  'print_task_config'
+  'print_task_config',
+  'machine_state_manager'
 ];
 
 class MoonrakerClient extends EventEmitter {
