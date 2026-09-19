@@ -49,4 +49,35 @@ describe('TimelapseCache', () => {
     const reloaded = new TimelapseCache(cacheDirectory);
     expect(await reloaded.list()).toEqual([]);
   });
+
+  test('evicts the oldest timelapses when the cache reaches its size limit', async () => {
+    const cache = new TimelapseCache(cacheDirectory, { maxBytes: 8 });
+    const timelapses = [
+      { name: 'new.mp4', path: 'new.mp4', size: 4, modified: 30 },
+      { name: 'middle.mp4', path: 'middle.mp4', size: 4, modified: 20 },
+      { name: 'old.mp4', path: 'old.mp4', size: 4, modified: 10 }
+    ];
+
+    await cache.sync(timelapses, async timelapse => Readable.from(Buffer.from(timelapse.name.slice(0, 4))));
+
+    expect((await cache.list()).map(entry => entry.path)).toEqual(['new.mp4', 'middle.mp4']);
+    expect(await cache.get('old.mp4')).toBeNull();
+  });
+
+  test('evicts old timelapses to reserve free space for a download', async () => {
+    let freeBytes = 100;
+    const cache = new TimelapseCache(cacheDirectory, {
+      minFreeBytes: 5,
+      getFreeBytes: async () => freeBytes
+    });
+    const old = { name: 'old.mp4', path: 'old.mp4', size: 4, modified: 10 };
+    await cache.sync([old], async () => Readable.from(Buffer.from('old!')));
+    freeBytes = 6;
+
+    const recent = { name: 'new.mp4', path: 'new.mp4', size: 4, modified: 20 };
+    await cache.sync([recent], async () => Readable.from(Buffer.from('new!')));
+
+    expect(await cache.get('old.mp4')).toBeNull();
+    expect(await cache.get('new.mp4')).not.toBeNull();
+  });
 });

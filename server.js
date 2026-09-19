@@ -52,6 +52,14 @@ const CAMERA_STREAM_RESTART_INTERVAL = (() => {
 const COMPRESSED_CAMERA_MODES = new Set(['video', 'hls', 'dash', 'h264', 'h265']);
 const TIMELAPSE_METADATA_BYTES = 256 * 1024;
 const TIMELAPSE_CACHE_DIR = path.resolve(process.env.TIMELAPSE_CACHE_DIR || 'data/timelapses');
+const GIGABYTE = 1024 ** 3;
+const parseCacheGigabytes = (value, fallback) => {
+  if (value === undefined || value === '') return fallback * GIGABYTE;
+  const gigabytes = Number(value);
+  return (Number.isFinite(gigabytes) && gigabytes >= 0 ? gigabytes : fallback) * GIGABYTE;
+};
+const TIMELAPSE_CACHE_MAX_BYTES = parseCacheGigabytes(process.env.TIMELAPSE_CACHE_MAX_GB, 50);
+const TIMELAPSE_CACHE_MIN_FREE_BYTES = parseCacheGigabytes(process.env.TIMELAPSE_CACHE_MIN_FREE_GB, 10);
 const TIMELAPSE_SYNC_INTERVAL = Math.max(
   60,
   Number.parseInt(process.env.TIMELAPSE_SYNC_INTERVAL, 10) || 300
@@ -107,7 +115,10 @@ const cameraSubscribers = new Set(); // Clients subscribed to camera stream
 let latestFrame = null;
 let cameraStartFailure = { lastError: null, count: 0 };
 const timelapseDurationCache = new Map();
-const timelapseCache = new TimelapseCache(TIMELAPSE_CACHE_DIR);
+const timelapseCache = new TimelapseCache(TIMELAPSE_CACHE_DIR, {
+  maxBytes: TIMELAPSE_CACHE_MAX_BYTES || Infinity,
+  minFreeBytes: TIMELAPSE_CACHE_MIN_FREE_BYTES
+});
 let timelapseSyncTimer = null;
 
 const userStats = new UserStats();
@@ -912,6 +923,7 @@ async function autoConnect() {
 server.listen(PORT, () => {
   console.log(`Snapmaker Print Monitor server running on http://localhost:${PORT}`);
   console.log(`Timelapse cache directory: ${TIMELAPSE_CACHE_DIR}`);
+  console.log(`Timelapse cache limits: ${TIMELAPSE_CACHE_MAX_BYTES / GIGABYTE || 'unlimited'} GiB maximum, ${TIMELAPSE_CACHE_MIN_FREE_BYTES / GIGABYTE} GiB free-space reserve`);
   timelapseCache.ready.catch(error => console.error('Failed to initialize timelapse cache:', error.message));
   timelapseSyncTimer = setInterval(() => {
     synchronizeTimelapses().catch(error => {

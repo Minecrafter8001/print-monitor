@@ -4,9 +4,12 @@ const path = require('path');
 const { pipeline } = require('stream/promises');
 
 class TimelapseCache {
-  constructor(cacheDirectory) {
+  constructor(cacheDirectory, options = {}) {
     this.cacheDirectory = cacheDirectory;
     this.manifestPath = path.join(cacheDirectory, 'manifest.json');
+    this.maxBytes = options.maxBytes ?? Infinity;
+    this.minFreeBytes = options.minFreeBytes ?? 0;
+    this.getFreeBytes = options.getFreeBytes || this.getDiskFreeBytes.bind(this);
     this.entries = new Map();
     this.syncPromise = null;
     this.ready = this.load();
@@ -21,9 +24,43 @@ class TimelapseCache {
           this.entries.set(entry.path, entry);
         }
       }
+      await this.prune(0);
     } catch (error) {
       if (error.code !== 'ENOENT') console.warn('Failed to load timelapse cache manifest:', error.message);
     }
+  }
+
+  async getDiskFreeBytes() {
+    const stats = await fs.promises.statfs(this.cacheDirectory);
+    return stats.bavail * stats.bsize;
+  }
+
+  getCacheSize() {
+    return [...this.entries.values()]
+      .reduce((total, entry) => total + (Number(entry.size) || 0), 0);
+  }
+
+  async prune(incomingBytes, incomingModified = Infinity, protectedPath = null) {
+    let cacheSize = this.getCacheSize();
+    let freeBytes = await this.getFreeBytes();
+    const candidates = [...this.entries.values()]
+      .filter(entry => entry.path !== protectedPath && (Number(entry.modified) || 0) <= incomingModified)
+      .sort((left, right) => (Number(left.modified) || 0) - (Number(right.modified) || 0));
+    let changed = false;
+
+    while (cacheSize + incomingBytes > this.maxBytes || freeBytes < this.minFreeBytes + incomingBytes) {
+      const oldest = candidates.shift();
+      if (!oldest) return false;
+      await fs.promises.rm(this.getAbsolutePath(oldest), { force: true });
+      this.entries.delete(oldest.path);
+      const deletedBytes = Number(oldest.size) || 0;
+      cacheSize -= deletedBytes;
+      freeBytes += deletedBytes;
+      changed = true;
+    }
+
+    if (changed) await this.saveManifest();
+    return true;
   }
 
   getAbsolutePath(entry) {
@@ -73,6 +110,11 @@ class TimelapseCache {
       const destination = path.join(this.cacheDirectory, cacheFile);
       const temporary = `${destination}.partial`;
       try {
+        const hasCapacity = await this.prune(timelapse.size, timelapse.modified, timelapse.path);
+        if (!hasCapacity) {
+          console.warn(`Skipping timelapse ${timelapse.path}: cache limits cannot accommodate it`);
+          continue;
+        }
         const stream = await download(timelapse);
         await pipeline(stream, fs.createWriteStream(temporary));
         const stats = await fs.promises.stat(temporary);
