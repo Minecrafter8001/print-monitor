@@ -35,6 +35,8 @@ Open `http://localhost:3000`.
 | `CAMERA_KEEPALIVE_URL` | printer WebSocket | Optional Snapmaker camera-control WebSocket URL |
 | `CAMERA_KEEPALIVE_TOKEN` | none | Stock Snapmaker camera token; kept on the server |
 | `CAMERA_KEEPALIVE_INTERVAL` | `10` | Keepalive interval in seconds, minimum 5 |
+| `TIMELAPSE_CACHE_DIR` | `data/timelapses` | Persistent local storage for timelapse MP4s and metadata |
+| `TIMELAPSE_SYNC_INTERVAL` | `300` | Seconds between online timelapse cache synchronization attempts, minimum 60 |
 | `PORT` | `3000` | Dashboard HTTP port |
 | `WS_UPDATE_INTERVAL` | `1000` | Minimum browser status broadcast interval in milliseconds |
 | `DEBUG_DISABLE_LOCAL_IP_FILTER` | `true` | Disables local-IP filtering when true |
@@ -79,6 +81,8 @@ Normalized MP4 responses are reopened every `CAMERA_STREAM_RESTART_INTERVAL` sec
 - `GET /api/admin`: local-only connection statistics
 
 The Timelapses menu downloads files in sequential 16 MiB HTTP range requests. This keeps each response below common reverse-proxy limits, including deployments exposed through Cloudflare Tunnel.
+
+Completed timelapse MP4s are copied to `TIMELAPSE_CACHE_DIR` in the background when the printer is connected. Cached metadata and downloads remain available when Moonraker or the printer is offline. Downloads prefer the local cache and retain HTTP byte-range support.
 - WebSocket `/`: `type: "status"` notifications
 
 The printer object contains `connected`, `name`, `klipper`, `print`, `temperatures`, `camera`, and `updatedAt`.

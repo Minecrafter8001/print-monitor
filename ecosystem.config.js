@@ -24,7 +24,9 @@ module.exports = {
         CAMERA_SNAPSHOT_INTERVAL: '1000',
         CAMERA_KEEPALIVE_URL: '',
         CAMERA_KEEPALIVE_TOKEN: '',
-        CAMERA_KEEPALIVE_INTERVAL: '10'
+        CAMERA_KEEPALIVE_INTERVAL: '10',
+        TIMELAPSE_CACHE_DIR: 'data/timelapses',
+        TIMELAPSE_SYNC_INTERVAL: '300',
       }
     }
   ]

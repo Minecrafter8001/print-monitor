@@ -7,6 +7,7 @@ const DEBUG_DISABLE_LOCAL_IP_FILTER =
   process.env.DEBUG_DISABLE_LOCAL_IP_FILTER === 'true';
 const ENABLE_DEBUG_ENDPOINTS = process.env.ENABLE_DEBUG_ENDPOINTS === 'true';
 const express = require('express');
+const path = require('path');
 const http = require('http');
 const { spawn } = require('child_process');
 const { Readable } = require('stream');
@@ -23,6 +24,7 @@ const {
   parseMp4Duration
 } = require('modules/timelapse-utils');
 const UserStats = require('modules/user-stats');
+const TimelapseCache = require('modules/timelapse-cache');
 
 const MoonrakerClient = require('modules/moonraker-client');
 
@@ -49,6 +51,11 @@ const CAMERA_STREAM_RESTART_INTERVAL = (() => {
 })();
 const COMPRESSED_CAMERA_MODES = new Set(['video', 'hls', 'dash', 'h264', 'h265']);
 const TIMELAPSE_METADATA_BYTES = 256 * 1024;
+const TIMELAPSE_CACHE_DIR = path.resolve(process.env.TIMELAPSE_CACHE_DIR || 'data/timelapses');
+const TIMELAPSE_SYNC_INTERVAL = Math.max(
+  60,
+  Number.parseInt(process.env.TIMELAPSE_SYNC_INTERVAL, 10) || 300
+) * 1000;
 
 // Store printer data
 let printerClient = null;
@@ -100,6 +107,8 @@ const cameraSubscribers = new Set(); // Clients subscribed to camera stream
 let latestFrame = null;
 let cameraStartFailure = { lastError: null, count: 0 };
 const timelapseDurationCache = new Map();
+const timelapseCache = new TimelapseCache(TIMELAPSE_CACHE_DIR);
+let timelapseSyncTimer = null;
 
 const userStats = new UserStats();
 
@@ -185,27 +194,58 @@ async function getTimelapseDuration(file) {
   }
 }
 
+async function getLiveTimelapses() {
+  const files = await printerClient.listFiles('camera');
+  const history = await printerClient.getHistory().catch(error => {
+    console.warn('Failed to retrieve print history:', error.message);
+    return { jobs: [] };
+  });
+  const historyJobs = Array.isArray(history) ? history : history.jobs || [];
+  const timelapses = buildTimelapseList(files, historyJobs);
+  await Promise.all(timelapses.map(async timelapse => {
+    timelapse.timelapseDurationSeconds = await getTimelapseDuration(timelapse);
+  }));
+  return timelapses;
+}
+
+async function downloadTimelapseStream(timelapse) {
+  const headers = {};
+  if (printerClient.apiKey) headers['X-Api-Key'] = printerClient.apiKey;
+  const response = await fetch(
+    printerClient.resolveURL(`/server/files/camera/${encodeMoonrakerFilePath(timelapse.path)}`),
+    { headers }
+  );
+  if (!response.ok || !response.body) {
+    throw new Error(`Moonraker returned ${response.status}`);
+  }
+  return Readable.fromWeb(response.body);
+}
+
+function cacheTimelapses(timelapses) {
+  timelapseCache.sync(timelapses, downloadTimelapseStream)
+    .then(() => console.log(`Timelapse cache synchronized: ${timelapses.length} file(s) available`))
+    .catch(error => console.error('Timelapse cache synchronization failed:', error.message));
+}
+
+async function synchronizeTimelapses() {
+  if (!printerClient?.connected) return;
+  const timelapses = await getLiveTimelapses();
+  await timelapseCache.sync(timelapses, downloadTimelapseStream);
+  console.log(`Timelapse cache synchronized: ${timelapses.length} file(s) available`);
+}
+
 app.get('/api/timelapses', async (req, res) => {
-  if (!printerClient?.connected) {
-    return res.status(503).json({ error: 'Printer is not connected' });
+  if (printerClient?.connected) {
+    try {
+      const timelapses = await getLiveTimelapses();
+      cacheTimelapses(timelapses);
+      return res.json({ timelapses });
+    } catch (error) {
+      console.warn('Failed to list live timelapses, using cache:', error.message);
+    }
   }
 
-  try {
-    const files = await printerClient.listFiles('camera');
-    const history = await printerClient.getHistory().catch(error => {
-      console.warn('Failed to retrieve print history:', error.message);
-      return { jobs: [] };
-    });
-    const historyJobs = Array.isArray(history) ? history : history.jobs || [];
-    const timelapses = buildTimelapseList(files, historyJobs);
-    await Promise.all(timelapses.map(async timelapse => {
-      timelapse.timelapseDurationSeconds = await getTimelapseDuration(timelapse);
-    }));
-    res.json({ timelapses });
-  } catch (error) {
-    console.error('Failed to list timelapses:', error.message);
-    res.status(502).json({ error: 'Unable to retrieve timelapses' });
-  }
+  res.json({ timelapses: await timelapseCache.list(), cached: true });
 });
 
 app.get('/api/timelapses/download', async (req, res) => {
@@ -213,8 +253,13 @@ app.get('/api/timelapses/download', async (req, res) => {
   if (!isSafeTimelapsePath(filePath)) {
     return res.status(400).json({ error: 'Invalid timelapse path' });
   }
+
+  const cached = await timelapseCache.get(filePath);
+  if (cached) {
+    return res.download(cached.absolutePath, cached.entry.name);
+  }
   if (!printerClient?.connected) {
-    return res.status(503).json({ error: 'Printer is not connected' });
+    return res.status(404).json({ error: 'Timelapse is not cached and the printer is offline' });
   }
 
   try {
@@ -567,6 +612,9 @@ async function onPrinterConnected(printerName = null) {
   await setupCameraURL();
   await startCameraStreaming();
   broadcastToClients({ type: 'status', data: buildStatusPayload() });
+  synchronizeTimelapses().catch(error => {
+    console.error('Initial timelapse cache synchronization failed:', error.message);
+  });
 }
 
 async function ensureReconnectSetup(printerName = null) {
@@ -863,7 +911,15 @@ async function autoConnect() {
 // Start server
 server.listen(PORT, () => {
   console.log(`Snapmaker Print Monitor server running on http://localhost:${PORT}`);
-  
+  console.log(`Timelapse cache directory: ${TIMELAPSE_CACHE_DIR}`);
+  timelapseCache.ready.catch(error => console.error('Failed to initialize timelapse cache:', error.message));
+  timelapseSyncTimer = setInterval(() => {
+    synchronizeTimelapses().catch(error => {
+      console.error('Scheduled timelapse cache synchronization failed:', error.message);
+    });
+  }, TIMELAPSE_SYNC_INTERVAL);
+  timelapseSyncTimer.unref?.();
+
   // Auto-connect to printer on startup
   autoConnect();
 });
@@ -871,6 +927,7 @@ server.listen(PORT, () => {
 // Cleanup on exit
 process.on('SIGINT', () => {
   console.log('\nShutting down...');
+  if (timelapseSyncTimer) clearInterval(timelapseSyncTimer);
   stopCameraStreaming();
   if (printerClient) {
     printerClient.disconnect();
